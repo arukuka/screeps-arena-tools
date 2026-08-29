@@ -1,0 +1,8 @@
+node_modules/
+# 取得したリプレイの既定の置き場。試合データは各自のものなので追跡しない。
+# 先頭の `/` はリポジトリ直下だけを指す。これが無いと examples/plugins まで巻き込む
+/replays/
+# 手元だけで使うプラグインの置き場
+/plugins/
+.DS_Store
+*.tsbuildinfo

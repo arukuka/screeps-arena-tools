@@ -1,0 +1,267 @@
+/*
+ * Screeps: Arena リプレイビューアのスタイル。
+ * 盤面が主役なので、UI は暗い背景に沈めて色の情報量を盤に振る。
+ */
+
+:root {
+    --bg: #0d1117;
+    --panel: #151b23;
+    --panel-2: #1c232d;
+    --line: #2a3441;
+    --fg: #d7e0ea;
+    --fg-dim: #8b97a6;
+    --side0: #4aa8ff;
+    --side1: #ff7a5c;
+    --accent: #ffd166;
+    --ok: #6ee7a8;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+    margin: 0;
+    height: 100%;
+    background: var(--bg);
+    color: var(--fg);
+    font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+#app {
+    display: grid;
+    grid-template-columns: 240px minmax(0, 1fr) 320px;
+    grid-template-rows: 44px minmax(0, 1fr) auto;
+    grid-template-areas:
+        "top top top"
+        "side stage inspect"
+        "foot foot foot";
+    height: 100vh;
+}
+
+/* --- ヘッダ --- */
+.topbar {
+    grid-area: top;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 0 14px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--line);
+}
+.topbar h1 { font-size: 13px; margin: 0; letter-spacing: 0.04em; color: var(--fg-dim); }
+.topbar-meta { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.topbar-actions { display: flex; gap: 8px; }
+
+button, .file-button, select {
+    background: var(--panel-2);
+    color: var(--fg);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 3px 9px;
+    font: inherit;
+    cursor: pointer;
+}
+button:hover, .file-button:hover { border-color: var(--fg-dim); }
+button.primary { background: #223247; border-color: #33506f; }
+button:disabled { opacity: 0.4; cursor: default; }
+
+/* --- サイドバー --- */
+.sidebar {
+    grid-area: side;
+    background: var(--panel);
+    border-right: 1px solid var(--line);
+    overflow-y: auto;
+}
+.sidebar-head {
+    padding: 8px 12px;
+    color: var(--fg-dim);
+    border-bottom: 1px solid var(--line);
+    position: sticky;
+    top: 0;
+    background: var(--panel);
+}
+.replay-list { padding: 6px; }
+.match {
+    display: block;
+    width: 100%;
+    text-align: left;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    padding: 4px 6px;
+    margin-bottom: 2px;
+    font-size: 11px;
+    color: var(--fg);
+}
+.match:hover { background: var(--panel-2); }
+.match.active { background: #223247; border-color: #33506f; }
+.match .row2 { color: var(--fg-dim); }
+
+/* --- 盤面 --- */
+.stage { grid-area: stage; min-width: 0; min-height: 0; display: flex; position: relative; }
+.board-wrap {
+    position: relative;
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 10px;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    cursor: grab;
+    user-select: none;
+}
+.board-wrap.panning { cursor: grabbing; }
+#board {
+    background: #05070a;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    transform-origin: center center;
+    will-change: transform;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+}
+
+.board-controls {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    background: rgba(21, 27, 35, 0.82);
+    backdrop-filter: blur(8px);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 3px;
+    z-index: 10;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+}
+.board-controls button {
+    padding: 2px 7px;
+    font-size: 11px;
+    min-width: 24px;
+    height: 24px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: 1px solid transparent;
+}
+.board-controls button:hover {
+    background: var(--panel-2);
+    border-color: var(--line);
+}
+.board-controls #btn-zoom-reset {
+    font-size: 10px;
+    min-width: 42px;
+    color: var(--fg-dim);
+}
+.board-controls #btn-zoom-reset:hover {
+    color: var(--fg);
+}
+
+.board-empty {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    text-align: center;
+    color: var(--fg-dim);
+    pointer-events: none;
+    z-index: 1;
+}
+/*
+ * `hidden` 属性で消えるようにする。
+ *
+ * ブラウザ既定の `[hidden] { display: none }` は UA スタイルなので、
+ * 上で `display: flex` を書いた時点で作者スタイルが勝ってしまい、
+ * ログを読み込んで `hidden = true` にしても案内文が残り続ける。
+ * display を指定した要素を hidden で隠すには、こちらでも打ち消す必要がある。
+ */
+.board-empty[hidden] {
+    display: none;
+}
+.board-wrap.dragging { outline: 2px dashed var(--accent); outline-offset: -8px; }
+.tooltip {
+    position: absolute;
+    pointer-events: none;
+    background: rgba(6, 10, 16, 0.94);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 5px 7px;
+    font-size: 11px;
+    white-space: pre;
+    z-index: 5;
+}
+
+/* --- 右パネル --- */
+.inspector {
+    grid-area: inspect;
+    background: var(--panel);
+    border-left: 1px solid var(--line);
+    overflow-y: auto;
+}
+.panel { padding: 8px 12px; border-bottom: 1px solid var(--line); }
+.panel h2 { font-size: 11px; color: var(--fg-dim); margin: 0 0 6px; letter-spacing: 0.08em; text-transform: uppercase; }
+.kv { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; margin: 0; font-size: 11px; }
+.kv dt { color: var(--fg-dim); }
+.kv dd { margin: 0; overflow: hidden; text-overflow: ellipsis; }
+.hint { color: var(--fg-dim); font-size: 11px; }
+
+.side-block { margin-bottom: 8px; font-size: 11px; }
+.side-name { font-weight: bold; margin-bottom: 2px; }
+.bar { height: 6px; background: var(--panel-2); border-radius: 3px; overflow: hidden; margin: 2px 0 4px; }
+.bar > span { display: block; height: 100%; }
+
+.action-list { max-height: 180px; overflow-y: auto; font-size: 11px; }
+.action-row { display: flex; gap: 6px; }
+.action-row .who { color: var(--fg-dim); min-width: 40px; }
+
+/* --- 下部トランスポート --- */
+.transport {
+    grid-area: foot;
+    background: var(--panel);
+    border-top: 1px solid var(--line);
+    padding: 6px 12px 8px;
+}
+.controls { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 4px; }
+.controls .speed, .controls .toggle { color: var(--fg-dim); display: flex; align-items: center; gap: 4px; }
+.tick-readout { margin-left: auto; color: var(--accent); }
+#scrubber { width: 100%; accent-color: #4aa8ff; }
+.chart { width: 100%; height: 64px; display: block; margin-top: 4px; cursor: pointer; }
+
+.legend { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 8px; font-size: 11px; }
+.legend div { display: flex; align-items: center; gap: 5px; }
+.legend i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+.legend i.line { width: 12px; height: 2px; border-radius: 0; }
+
+/* --- コンソールログ --- */
+.console-log {
+    margin: 0;
+    max-height: 160px;
+    overflow: auto;
+    font: inherit;
+    font-size: 11px;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+/* --- プラグイン --- */
+.plugin-list { padding: 4px 0 8px; }
+.plugin-item {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    padding: 3px 12px;
+    font-size: 11px;
+}
+.plugin-item .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); flex: none; }
+.plugin-item.inactive .dot { background: var(--fg-dim); }
+.plugin-item.failed .dot { background: #ff5d5d; }
+.plugin-item .why { color: var(--fg-dim); }
+.plugin-toggles { display: flex; align-items: center; gap: 6px; }
+.plugin-toggles .toggle { color: var(--accent); display: flex; align-items: center; gap: 4px; }

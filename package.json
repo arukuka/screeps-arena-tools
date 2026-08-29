@@ -1,0 +1,41 @@
+{
+    "name": "screeps-arena-replay-kit",
+    "version": "0.1.0",
+    "type": "module",
+    "description": "Fetch, normalize and view Screeps: Arena match replays",
+    "license": "MIT",
+    "engines": {
+        "node": ">=20"
+    },
+    "bin": {
+        "arena-replay": "src/cli.js"
+    },
+    "exports": {
+        ".": "./src/index.js",
+        "./normalize": "./src/normalize.js",
+        "./timeline": "./src/timeline.js"
+    },
+    "files": [
+        "src",
+        "viewer",
+        "examples",
+        "docs",
+        "README.md"
+    ],
+    "scripts": {
+        "test": "node --test test/*.test.js",
+        "typecheck": "tsc --noEmit -p jsconfig.json",
+        "view": "node src/cli.js view",
+        "fetch": "node src/cli.js fetch"
+    },
+    "keywords": [
+        "screeps",
+        "screeps-arena",
+        "replay",
+        "viewer"
+    ],
+    "devDependencies": {
+        "@types/node": "^26.2.0",
+        "typescript": "^5.9.3"
+    }
+}

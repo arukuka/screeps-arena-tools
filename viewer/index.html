@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Screeps: Arena Replay Viewer</title>
+<link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+<div id="app">
+    <header class="topbar">
+        <h1>Arena Replay</h1>
+        <div class="topbar-meta" id="match-title">リプレイ未選択</div>
+        <div class="topbar-actions">
+            <label class="file-button">
+                ファイルを開く
+                <input type="file" id="file-input" accept=".json,.gz" hidden />
+            </label>
+            <button id="reload-replays" type="button" title="リプレイ置き場を読み直す">再スキャン</button>
+        </div>
+    </header>
+
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-head">リプレイ</div>
+        <div id="replay-list" class="replay-list">
+            <p class="hint">読み込み中…</p>
+        </div>
+        <div class="sidebar-head">プラグイン</div>
+        <div id="plugin-list" class="plugin-list">
+            <p class="hint">なし</p>
+        </div>
+    </aside>
+
+    <main class="stage">
+        <div class="board-wrap" id="board-wrap">
+            <canvas id="board"></canvas>
+            <div class="tooltip" id="tooltip" hidden></div>
+            <div class="board-controls">
+                <button id="btn-zoom-in" type="button" title="拡大 (ホイール上 / +)">＋</button>
+                <button id="btn-zoom-reset" type="button" title="ズームを 100% に戻す">100%</button>
+                <button id="btn-zoom-out" type="button" title="縮小 (ホイール下 / -)">−</button>
+                <button id="btn-board-reset" type="button" title="中央配置・ズームリセット (ダブルクリック / 0 / R)">🎯</button>
+            </div>
+            <div class="board-empty" id="board-empty">
+                <p>左の一覧から選ぶ、またはここに <code>.replay.json.gz</code> をドロップ</p>
+                <p class="hint"><code>arena-replay fetch &lt;URL&gt;</code> でリプレイを取ってくる</p>
+            </div>
+        </div>
+    </main>
+
+    <aside class="inspector" id="inspector">
+        <section class="panel">
+            <h2>試合</h2>
+            <dl id="match-info" class="kv"></dl>
+        </section>
+        <section class="panel">
+            <h2>陣営</h2>
+            <div id="side-stats"></div>
+        </section>
+        <section class="panel">
+            <h2>選択中のユニット</h2>
+            <div id="unit-detail" class="hint">盤面のユニットをクリック</div>
+        </section>
+        <section class="panel">
+            <h2>この Tick の行動</h2>
+            <div id="action-list" class="action-list hint">なし</div>
+        </section>
+        <section class="panel" id="log-panel">
+            <h2>コンソールログ</h2>
+            <pre id="console-log" class="console-log hint">なし</pre>
+        </section>
+        <!-- プラグインのパネルはここに差し込まれる -->
+        <div id="plugin-panels"></div>
+        <section class="panel">
+            <h2>凡例</h2>
+            <div class="legend" id="legend"></div>
+            <p class="hint">円 = creep、外周の弧が残 HP、中心の点が主戦力パーツ。
+                薄い円は spawning 中。四角が Spawn / Extension、菱形が Flag。</p>
+            <p class="hint">Space 再生 / ← → 1 Tick / Shift+← → 10 Tick</p>
+            <p class="hint">盤面: ドラッグで移動 / ホイールでズーム / ダブルクリックで初期位置</p>
+        </section>
+    </aside>
+
+    <footer class="transport">
+        <div class="controls">
+            <button id="btn-first" type="button" title="先頭へ">⏮</button>
+            <button id="btn-back10" type="button" title="10 Tick 戻る">-10</button>
+            <button id="btn-back1" type="button" title="1 Tick 戻る">-1</button>
+            <button id="btn-play" type="button" class="primary" title="再生 / 一時停止">▶</button>
+            <button id="btn-fwd1" type="button" title="1 Tick 進む">+1</button>
+            <button id="btn-fwd10" type="button" title="10 Tick 進む">+10</button>
+            <button id="btn-last" type="button" title="末尾へ">⏭</button>
+            <label class="speed">
+                速度
+                <select id="speed">
+                    <option value="0.5">0.5x</option>
+                    <option value="1">1x</option>
+                    <option value="2">2x</option>
+                    <option value="4" selected>4x</option>
+                    <option value="8">8x</option>
+                    <option value="30">30x</option>
+                </select>
+            </label>
+            <label class="toggle"><input type="checkbox" id="show-actions" checked /> 行動</label>
+            <label class="toggle"><input type="checkbox" id="show-structures" checked /> 構造物</label>
+            <!-- プラグインのトグルはここに差し込まれる -->
+            <span id="plugin-toggles" class="plugin-toggles"></span>
+            <span class="tick-readout" id="tick-readout">-</span>
+        </div>
+        <input type="range" id="scrubber" min="0" max="0" value="0" step="1" />
+        <canvas id="chart" class="chart"></canvas>
+    </footer>
+</div>
+<script type="module" src="./app.js"></script>
+</body>
+</html>
