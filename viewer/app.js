@@ -117,7 +117,7 @@ async function readReplayFile(file) {
  *
  * 生の取得結果（`fetch_match` が保存した形）でもそのまま開けるようにしてある。
  * ただし生は 1 試合で数百 MB になりうるので、その場でブラウザに変換させるのは
- * 小さい試合に限る話。常用するなら `arena-replay convert` を通すこと。
+ * 小さい試合に限る話。常用するなら `arena-tools convert` を通すこと。
  */
 function acceptDocument(json, label) {
     const doc = json?.format === "screeps-arena-replay" ? json : normalizeMatch(json);
@@ -747,7 +747,7 @@ async function loadReplayList() {
         const res = await fetch("/api/replays");
         const data = await res.json();
         if (data.replays.length === 0) {
-            el.innerHTML = `<p class="hint">${escapeHtml(data.dir)} に何も無い。<br><code>arena-replay fetch &lt;URL&gt;</code> で取ってくる</p>`;
+            el.innerHTML = `<p class="hint">${escapeHtml(data.dir)} に何も無い。<br><code>arena-tools fetch &lt;URL&gt;</code> で取ってくる</p>`;
             return;
         }
         el.innerHTML = data.replays

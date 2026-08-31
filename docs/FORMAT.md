@@ -1,6 +1,6 @@
 # Replay Document 形式
 
-`arena-replay fetch` / `convert` が書き出す正規化リプレイの形。
+`arena-tools fetch` / `convert` が書き出す正規化リプレイの形。
 素の JSON なので、ビューアがブラウザでそのまま読める。`*.json.gz` は gzip をかけただけ。
 
 ```jsonc

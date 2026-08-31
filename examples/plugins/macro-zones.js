@@ -20,12 +20,12 @@
  * 使い方
  * ------------------------------------------------------------------
  * ```
- * arena-replay view --plugins ./examples/plugins
+ * arena-tools view --plugins ./examples/plugins
  * ```
  *
  * 自分のリポジトリに置いたままでもよい:
  * ```
- * arena-replay view --plugins ~/my-bot/arena-plugins
+ * arena-tools view --plugins ~/my-bot/arena-plugins
  * ```
  *
  * `@zones` を含まないログ（他人の試合）では、このプラグインは自動的に寝る。

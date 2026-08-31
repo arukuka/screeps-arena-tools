@@ -132,7 +132,7 @@ export default {
 ## 3. 置く
 
 ```bash
-arena-replay view --plugins ~/my-bot/arena-plugins
+arena-tools view --plugins ~/my-bot/arena-plugins
 ```
 
 置き場のディレクトリにある `*.js` が自動で読み込まれる。

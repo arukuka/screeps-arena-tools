@@ -36,7 +36,7 @@
  * 置き場所は自分のディレクトリでよい:
  *
  * ```
- * arena-replay view --plugins ~/my-bot/arena-plugins
+ * arena-tools view --plugins ~/my-bot/arena-plugins
  * ```
  */
 

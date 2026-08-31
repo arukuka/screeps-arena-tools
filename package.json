@@ -1,5 +1,5 @@
 {
-    "name": "screeps-arena-replay-kit",
+    "name": "screeps-arena-tools",
     "version": "0.1.0",
     "type": "module",
     "description": "Fetch, normalize and view Screeps: Arena match replays",
@@ -8,7 +8,7 @@
         "node": ">=20"
     },
     "bin": {
-        "arena-replay": "src/cli.js"
+        "arena-tools": "src/cli.js"
     },
     "exports": {
         ".": "./src/index.js",

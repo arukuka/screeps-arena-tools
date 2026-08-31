@@ -1,4 +1,4 @@
-# Screeps: Arena Replay Kit
+# Screeps: Arena Tools
 
 [Screeps: Arena](https://arena.screeps.com/) の対戦リプレイを **取得 → 正規化 → 閲覧** するための道具一式。
 依存パッケージ無し、ビルド工程無し。Node.js だけで動く。
@@ -9,8 +9,8 @@
 - **plugins** — ボット固有の内部状態を、**本体を fork せずに**足せる
 
 ```
-npx arena-replay fetch https://arena.screeps.com/game/XTTCQ7DA4T
-npx arena-replay view
+npx arena-tools fetch https://arena.screeps.com/game/XTTCQ7DA4T
+npx arena-tools view
 ```
 
 ---
@@ -33,13 +33,13 @@ npx arena-replay view
 URL をそのまま貼ってよい。短縮 ID でもよい。
 
 ```bash
-arena-replay fetch https://arena.screeps.com/game/XTTCQ7DA4T
-arena-replay fetch XTTCQ7DA4T
-arena-replay fetch XTTCQ7DA4T -o replays/vs-kerobee.json.gz
+arena-tools fetch https://arena.screeps.com/game/XTTCQ7DA4T
+arena-tools fetch XTTCQ7DA4T
+arena-tools fetch XTTCQ7DA4T -o replays/vs-kerobee.json.gz
 ```
 
 ```
-=== Screeps: Arena Replay Kit ===
+=== Screeps: Arena Tools ===
 試合: https://arena.screeps.com/game/XTTCQ7DA4T
   found-app: PID 84210
   connected: ws://127.0.0.1:9229/...
@@ -53,8 +53,8 @@ arena-replay fetch XTTCQ7DA4T -o replays/vs-kerobee.json.gz
 ### 見る
 
 ```bash
-arena-replay view                 # http://localhost:5544/
-arena-replay view --port 8080 --replays ./replays
+arena-tools view                 # http://localhost:5544/
+arena-tools view --port 8080 --replays ./replays
 ```
 
 | 操作 | |
@@ -69,8 +69,8 @@ arena-replay view --port 8080 --replays ./replays
 ### すでに手元にある生データを変換する
 
 ```bash
-arena-replay convert match_XTTCQ7DA4T.json --short-id XTTCQ7DA4T
-arena-replay info replays/XTTCQ7DA4T.replay.json.gz
+arena-tools convert match_XTTCQ7DA4T.json --short-id XTTCQ7DA4T
+arena-tools info replays/XTTCQ7DA4T.replay.json.gz
 ```
 
 ---
@@ -106,7 +106,7 @@ Arena のゲーム API は Steam 認証セッションを見ており、外部�
 ```mermaid
 sequenceDiagram
     autonumber
-    participant CLI as arena-replay
+    participant CLI as arena-tools
     participant App as Screeps: Arena (Electron)
     participant API as arena.screeps.com/api
 
@@ -149,7 +149,7 @@ console.log(`@creepZone ${JSON.stringify({ "335": 0, "340": 2 })}`);
 ```
 
 ```bash
-arena-replay view --plugins ~/my-bot/arena-plugins
+arena-tools view --plugins ~/my-bot/arena-plugins
 ```
 
 `@zones` を含まないログ（他人の試合）では、そのプラグインは自動的に寝る。
@@ -160,7 +160,7 @@ arena-replay view --plugins ~/my-bot/arena-plugins
 ## ライブラリとして使う
 
 ```js
-import { normalizeMatch, buildTimeline, stateAt } from "screeps-arena-replay-kit";
+import { normalizeMatch, buildTimeline, stateAt } from "screeps-arena-tools";
 
 const doc = normalizeMatch(JSON.parse(raw));
 const timeline = buildTimeline(doc);

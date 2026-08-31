@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 /**
- * `arena-replay` のコマンド入口。
+ * `arena-tools` のコマンド入口。
  *
- *   arena-replay fetch   <url|shortId> [-o <file>]
- *   arena-replay convert <raw.json>    [-o <file>]
- *   arena-replay view    [--port N] [--replays <dir>] [--plugins <dir>]
- *   arena-replay info    <replay.json.gz>
+ *   arena-tools fetch   <url|shortId> [-o <file>]
+ *   arena-tools convert <raw.json>    [-o <file>]
+ *   arena-tools view    [--port N] [--replays <dir>] [--plugins <dir>]
+ *   arena-tools info    <replay.json.gz>
  */
 
 import { mkdirSync } from "node:fs";
@@ -21,21 +21,21 @@ import { DEFAULT_PORT, listReplays, resolveServeOptions, serve } from "./serve.j
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 const USAGE = `
-Screeps: Arena Replay Kit
+Screeps: Arena Tools
 
-  arena-replay fetch <url|shortId> [-o <file>]
+  arena-tools fetch <url|shortId> [-o <file>]
       起動中の Screeps: Arena 経由で試合を取得し、正規化して保存する。
       URL をそのまま貼ってよい:
-        arena-replay fetch https://arena.screeps.com/game/XTTCQ7DA4T
-        arena-replay fetch XTTCQ7DA4T
+        arena-tools fetch https://arena.screeps.com/game/XTTCQ7DA4T
+        arena-tools fetch XTTCQ7DA4T
 
-  arena-replay convert <raw.json> [-o <file>] [--short-id <id>]
+  arena-tools convert <raw.json> [-o <file>] [--short-id <id>]
       すでに手元にある生の取得結果を正規化する。
 
-  arena-replay view [--port <n>] [--replays <dir>] [--plugins <dir>]
+  arena-tools view [--port <n>] [--replays <dir>] [--plugins <dir>]
       ビューアを立ち上げる（既定 http://localhost:${DEFAULT_PORT}/）。
 
-  arena-replay info <replay.json.gz>
+  arena-tools info <replay.json.gz>
       保存済みリプレイの要約を表示する。
 `.trim();
 
@@ -72,7 +72,7 @@ async function cmdFetch(positional, flags) {
     if (positional.length === 0) throw new Error("試合の URL か短縮 ID を渡すこと");
     const shortId = parseMatchRef(positional[0]);
 
-    console.log(`=== Screeps: Arena Replay Kit ===`);
+    console.log(`=== Screeps: Arena Tools ===`);
     console.log(`試合: ${matchUrl(shortId)}`);
 
     const doc = await fetchMatch(shortId, {
@@ -96,7 +96,7 @@ async function cmdFetch(positional, flags) {
     console.log(`\n保存: ${out} (${(bytes / 1024).toFixed(1)} KB)`);
     console.log(`  ${describeReplay(doc)}`);
     reportExtensions(doc);
-    console.log(`\n  見るには: arena-replay view`);
+    console.log(`\n  見るには: arena-tools view`);
 }
 
 function cmdConvert(positional, flags) {
@@ -134,7 +134,7 @@ function cmdView(flags) {
     console.log(`ビューア: http://localhost:${opts.port}/`);
     console.log(`  リプレイ: ${opts.replayDir} (${found.length} 件)`);
     console.log(`  プラグイン: ${opts.pluginDir ?? "(なし)"}`);
-    if (found.length === 0) console.log("  まだ何も無い。`arena-replay fetch <url>` で取ってくること");
+    if (found.length === 0) console.log("  まだ何も無い。`arena-tools fetch <url>` で取ってくること");
     console.log("  Ctrl+C で停止");
     console.log("==================================================");
 }
