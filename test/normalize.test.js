@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 
-import { createNormalizer, encodeBody, normalizeMatch } from "../src/normalize.js";
+import { createNormalizer, encodeBody, normalizeMatch, readGameMeta } from "../src/normalize.js";
 import { buildTimeline, bodySize, stateAt } from "../src/timeline.js";
 
 const fixture = (name) => fileURLToPath(new URL(`./fixtures/${name}`, import.meta.url));
@@ -26,6 +26,73 @@ test("player1 / player2 を実際のユーザ名に対応づける", () => {
         ["arukuka", "Opponent"],
     );
     assert.equal(doc.meta.players[0].slot, "player1");
+});
+
+test("firstPlayerIndex: 1 のときにスロット順（陣営）と勝者が正しく反転・解決される", () => {
+    // HD8LGUUED5 と同等の構成: usersCode[0]=arukuka, usersCode[1]=安兴, firstPlayerIndex=1, winner=0 (usersCode[1]の勝ち)
+    const mockGameData = {
+        game: {
+            users: [
+                { _id: "userA", username: "arukuka" },
+                { _id: "userB", username: "安兴" },
+            ],
+            codes: [
+                { _id: "codeA", user: "userA", version: 24 },
+                { _id: "codeB", user: "userB", version: 46 },
+            ],
+            game: {
+                usersCode: ["codeA", "codeB"],
+                playerColor: ["#FF3333", "#5555FF"],
+                firstPlayerIndex: 1,
+                result: { status: "ok", winner: 0 },
+            },
+        },
+    };
+    const meta = readGameMeta(mockGameData);
+    // firstPlayerIndex: 1 により、スロット0 (player1, 赤, 上) が安兴、スロット1 (player2, 青, 下) が arukuka
+    assert.equal(meta.players[0].username, "安兴");
+    assert.equal(meta.players[0].slot, "player1");
+    assert.equal(meta.players[0].side, 0);
+    assert.equal(meta.players[0].codeVersion, 46);
+    assert.equal(meta.players[1].username, "arukuka");
+    assert.equal(meta.players[1].slot, "player2");
+    assert.equal(meta.players[1].side, 1);
+    assert.equal(meta.players[1].codeVersion, 24);
+
+    // winner: 0 (usersCode[1] = 安兴の勝ち) -> スロット0 (安兴) の勝ち
+    assert.equal(meta.result.draw, false);
+    assert.equal(meta.result.winner, 0);
+    assert.equal(meta.result.winnerName, "安兴");
+    assert.equal(meta.result.raw, 0);
+});
+
+test("firstPlayerIndex: 0 のときの勝者解決", () => {
+    // 2LI827DGUX と同等の構成: usersCode[0]=arukuka, usersCode[1]=Zeus, firstPlayerIndex=0, winner=1 (usersCode[0]の勝ち)
+    const mockGameData = {
+        game: {
+            users: [
+                { _id: "userA", username: "arukuka" },
+                { _id: "userB", username: "Zeus" },
+            ],
+            codes: [
+                { _id: "codeA", user: "userA", version: 24 },
+                { _id: "codeB", user: "userB", version: 3 },
+            ],
+            game: {
+                usersCode: ["codeA", "codeB"],
+                playerColor: ["#FF3333", "#5555FF"],
+                firstPlayerIndex: 0,
+                result: { status: "ok", winner: 1 },
+            },
+        },
+    };
+    const meta = readGameMeta(mockGameData);
+    assert.equal(meta.players[0].username, "arukuka");
+    assert.equal(meta.players[1].username, "Zeus");
+
+    // winner: 1 (usersCode[0] = arukukaの勝ち) -> スロット0 (arukuka) の勝ち
+    assert.equal(meta.result.winner, 0);
+    assert.equal(meta.result.winnerName, "arukuka");
 });
 
 test("引き分けを勝者 0.5 から読む", () => {

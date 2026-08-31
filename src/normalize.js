@@ -106,9 +106,10 @@ export function encodeBody(body) {
  * 生の `gameData`（`/api/game/{shortId}` の応答）から表示用のメタ情報を組む。
  *
  * player1 / player2 がどちらの人間かは自明ではない。リプレイ中の
- * オブジェクトは `"player1"` としか言わず、`gameData.game.users` は
- * 別の順序で並んでいることがある。`usersCode[i]` が「スロット i+1 が
- * 提出したコード」なので、そこから `codes[].user` を辿って対応を取る。
+ * オブジェクトは `"player1"` / `"player2"` としか言わず、`gameData.game.users` は
+ * 閲覧者本人が先頭に来るなど別の順序で並んでいる。
+ * 対戦したコード ID 配列 `usersCode` に対し、`firstPlayerIndex` が 1 の場合は
+ * 盤面スロット（player1 / player2）が反転する（公式クライアント `getGamePlayers` と同等）。
  *
  * @param {any} gameData
  * @returns {{ players: any[], result: any, arenaId: string | null, ticksLimit: number | null, createdAt: string | null }}
@@ -121,16 +122,31 @@ export function readGameMeta(gameData) {
     const codes = Array.isArray(outer.codes) ? outer.codes : [];
     const usersCode = Array.isArray(inner.usersCode) ? inner.usersCode : [];
     const colors = Array.isArray(inner.playerColor) ? inner.playerColor : [];
+    const firstPlayerIndex = Number(inner.firstPlayerIndex) || 0;
 
     const userById = new Map(users.map((u) => [u._id, u]));
     const codeById = new Map(codes.map((c) => [c._id, c]));
 
-    const slots = Math.max(usersCode.length, users.length, 2);
+    // firstPlayerIndex が 1 の場合、盤面上のスロット (player1, player2) は [usersCode[1], usersCode[0]] となる
+    const slotCodeIds = [...usersCode];
+    if (firstPlayerIndex === 1 && slotCodeIds.length >= 2) {
+        [slotCodeIds[0], slotCodeIds[1]] = [slotCodeIds[1], slotCodeIds[0]];
+    }
+
+    const slots = Math.max(slotCodeIds.length, users.length, 2);
     const players = [];
     for (let i = 0; i < slots; i++) {
-        const code = codeById.get(usersCode[i]);
-        // usersCode から辿れないときは users の並び順に素直に落とす
-        const user = code ? userById.get(code.user) : users[i];
+        const code = codeById.get(slotCodeIds[i]);
+        // usersCode から辿れないときのフォールバック
+        const fallbackUser =
+            firstPlayerIndex === 1 && users.length >= 2
+                ? i === 0
+                    ? users[1]
+                    : i === 1
+                      ? users[0]
+                      : users[i]
+                : users[i];
+        const user = code ? userById.get(code.user) : fallbackUser;
         players.push({
             slot: `player${i + 1}`,
             side: i,
@@ -143,7 +159,7 @@ export function readGameMeta(gameData) {
 
     return {
         players,
-        result: readResult(inner.result, players),
+        result: readResult(inner.result, players, firstPlayerIndex),
         arenaId: outer.arena ?? null,
         ticksLimit: typeof outer.meta?.ticks === "number" ? outer.meta.ticks : null,
         createdAt: inner.createdAt ?? null,
@@ -153,20 +169,29 @@ export function readGameMeta(gameData) {
 /**
  * 勝敗を読む。
  *
- * `result.winner` は勝者スロットの添字だが、引き分けのときだけ `0.5` が入る
- * （実測: 2026-08-28 の XTTCQ7DA4T が `{"status":"ok","winner":0.5}`）。
- * 整数でなければ引き分け、として扱い、生値も残して判断材料にする。
+ * Screeps Arena の `result.winner` は「`usersCode[0]` から見た勝敗スコア」を表す:
+ *   - 1: usersCode[0] の勝利
+ *   - 0: usersCode[1] の勝利
+ *   - 0.5: 引き分け（実測: 2026-08-28 の XTTCQ7DA4T が `{"status":"ok","winner":0.5}`）
+ *
+ * 盤面スロット（players / side 0 または 1）の勝者インデックスにマッピングして返す。
  */
-function readResult(result, players) {
+function readResult(result, players, firstPlayerIndex = 0) {
     if (!result || typeof result !== "object") return { winner: null, draw: false, raw: null };
     const raw = result.winner;
     if (typeof raw !== "number") return { winner: null, draw: false, status: result.status ?? null, raw: raw ?? null };
     if (!Number.isInteger(raw)) {
         return { winner: null, draw: true, status: result.status ?? null, raw };
     }
+
+    // raw === 1 は usersCode[0] の勝利、raw === 0 は usersCode[1] の勝利
+    const codeWinnerIndex = raw === 1 ? 0 : 1;
+    // firstPlayerIndex が 1 のときは盤面スロット順が反転している
+    const slotWinnerIndex = firstPlayerIndex === 1 ? (codeWinnerIndex === 0 ? 1 : 0) : codeWinnerIndex;
+
     return {
-        winner: raw,
-        winnerName: players[raw]?.username ?? null,
+        winner: slotWinnerIndex,
+        winnerName: players[slotWinnerIndex]?.username ?? null,
         draw: false,
         status: result.status ?? null,
         raw,

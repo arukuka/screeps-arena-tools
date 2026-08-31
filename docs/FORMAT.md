@@ -41,12 +41,18 @@ API が返す生データは**毎 Tick の完全スナップショット**なの
 | `players[]` | `{ slot, side, username, userId, color, codeVersion }` |
 | `result` | `{ winner, winnerName, draw, status, raw }` |
 
-**`players` の対応付けに注意。** リプレイ中のオブジェクトは所有者を `"player1"` としか言わず、
+**`players` の対応付けに注意。** リプレイ中のオブジェクトは所有者を `"player1"` / `"player2"` としか言わず、
 `gameData.game.users` は別の順序で並んでいることがある。
-`usersCode[i]` が「スロット `i+1` の提出コード」なので、そこから `codes[].user` を辿って解決している。
+対戦した提出コード配列 `usersCode`（`[codeA, codeB]`）に対し、`firstPlayerIndex` が `1` の場合は
+盤面スロット（`player1` / `player2`）が反転する（公式クライアント `getGamePlayers` と同等）。
+そこから `codes[].user` を辿って各スロットのプレイヤー情報を解決している。
 
-**`result.winner` は引き分けのとき `0.5`。** 整数でなければ引き分けとして `draw: true` にし、
-生値を `raw` に残す。
+**`result.winner` の勝敗判定。** Screeps Arena API の `winner` 生値（`raw`）は `usersCode[0]` から見た勝敗スコアを表す:
+- `raw === 1`: `usersCode[0]` の勝利
+- `raw === 0`: `usersCode[1]` の勝利
+- `raw === 0.5`: 引き分け（`draw: true`、`winner: null`）
+
+ツール側ではこれを盤面スロット（`players` / `side` 0 または 1）のインデックスにマッピングして `result.winner` および `result.winnerName` に格納する。
 
 ## `terrain`
 
