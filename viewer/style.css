@@ -28,7 +28,7 @@ html, body {
 
 #app {
     display: grid;
-    grid-template-columns: 240px minmax(0, 1fr) 320px;
+    grid-template-columns: 280px minmax(0, 1fr) 320px;
     grid-template-rows: 44px minmax(0, 1fr) auto;
     grid-template-areas:
         "top top top"
@@ -87,14 +87,88 @@ button:disabled { opacity: 0.4; cursor: default; }
     background: transparent;
     border: 1px solid transparent;
     border-radius: 4px;
-    padding: 4px 6px;
-    margin-bottom: 2px;
+    padding: 6px 8px;
+    margin-bottom: 4px;
     font-size: 11px;
     color: var(--fg);
+    transition: background 0.15s ease, border-color 0.15s ease;
 }
 .match:hover { background: var(--panel-2); }
 .match.active { background: #223247; border-color: #33506f; }
-.match .row2 { color: var(--fg-dim); }
+
+.match-players {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11.5px;
+    font-weight: 500;
+    line-height: 1.3;
+    margin-bottom: 3px;
+    overflow: hidden;
+    white-space: nowrap;
+}
+.match-players .player-entry {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    max-width: 44%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.match-players .player-entry.winner {
+    font-weight: 700;
+}
+.match-players .crown {
+    font-size: 10px;
+    line-height: 1;
+}
+.match-players .player-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.match-players .ver {
+    font-size: 10px;
+    opacity: 0.75;
+    font-weight: normal;
+}
+.match-players .vs {
+    color: var(--fg-dim);
+    font-size: 10px;
+    font-weight: normal;
+    padding: 0 1px;
+    flex-shrink: 0;
+}
+.match-players .draw-badge {
+    font-size: 9px;
+    padding: 1px 4px;
+    border-radius: 2px;
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    color: var(--accent);
+    margin-left: 2px;
+    flex-shrink: 0;
+}
+
+.match-sub {
+    font-size: 10px;
+    color: var(--fg-dim);
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    line-height: 1.3;
+}
+.match-sub .match-file {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #9ab0c7;
+}
+.match-sub .match-details {
+    color: var(--fg-dim);
+    font-size: 9.5px;
+}
 
 /* --- 盤面 --- */
 .stage { grid-area: stage; min-width: 0; min-height: 0; display: flex; position: relative; }

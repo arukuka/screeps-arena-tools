@@ -140,7 +140,7 @@ function loadReplay(doc, label) {
     renderPluginToggles();
 
     $("board-empty").hidden = true;
-    $("match-title").textContent = label ?? describe(doc);
+    $("match-title").textContent = describe(doc);
     $input("scrubber").max = String(Math.max(0, view.timeline.length - 1));
 
     renderMatchInfo(doc);
@@ -151,8 +151,21 @@ function loadReplay(doc, label) {
     renderPluginList();
 }
 
+function formatPlayer(player, fallback = "player") {
+    if (!player) return fallback;
+    const name = player.username ?? player.slot ?? fallback;
+    const ver = player.codeVersion !== null && player.codeVersion !== undefined ? ` (v${player.codeVersion})` : "";
+    return `${name}${ver}`;
+}
+
 const describe = (doc) => {
-    const names = doc.meta.players.map((p) => p.username ?? p.slot).join(" vs ");
+    const names = doc.meta.players
+        .map((p, i) => {
+            const formatted = formatPlayer(p, p?.slot ?? `side ${i}`);
+            const isWinner = doc.meta.result && !doc.meta.result.draw && doc.meta.result.winner === i;
+            return isWinner ? `${formatted} 👑` : formatted;
+        })
+        .join(" vs ");
     return `${names} (${doc.meta.shortId ?? doc.meta.gameId ?? "?"})`;
 };
 
@@ -525,7 +538,16 @@ function renderChart() {
 
 function renderMatchInfo(doc) {
     const m = doc.meta;
-    const result = m.result.draw ? "引き分け" : (m.result.winnerName ?? (m.result.winner ?? "不明"));
+    let result = "不明";
+    if (m.result.draw) {
+        result = "引き分け";
+    } else if (m.result.winner !== null && m.result.winner !== undefined) {
+        const p = m.players[m.result.winner];
+        const pName = formatPlayer(p, m.result.winnerName ?? `side ${m.result.winner}`);
+        result = `${pName} 勝利 👑`;
+    } else if (m.result.winnerName) {
+        result = `${m.result.winnerName} 勝利 👑`;
+    }
     const rows = [
         ["試合", m.shortId ?? "-"],
         ["日時", m.createdAt ? m.createdAt.replace("T", " ").slice(0, 19) : "-"],
@@ -543,14 +565,18 @@ const escapeHtml = (text) =>
 function renderSideStats() {
     const stats = sideStats(view.timeline, view.state);
     const players = view.timeline.doc.meta.players;
+    const result = view.timeline.doc.meta.result;
     const maxParts = Math.max(1, ...stats.map((s) => s.parts));
     $("side-stats").innerHTML = stats
         .map((s, i) => {
-            const name = escapeHtml(players[i]?.username ?? `side ${i}`);
+            const player = players[i];
+            const name = escapeHtml(formatPlayer(player, `side ${i}`));
+            const isWinner = result && !result.draw && result.winner === i;
+            const crown = isWinner ? ' <span title="勝者">👑</span>' : "";
             const width = ((s.parts / maxParts) * 100).toFixed(1);
             return `
                 <div class="side-block">
-                    <div class="side-name" style="color:${sideColor(i)}">${name}</div>
+                    <div class="side-name" style="color:${sideColor(i)}">${name}${crown}</div>
                     <div class="bar"><span style="width:${width}%;background:${sideColor(i)}"></span></div>
                     <div>creep ${s.creeps} / パーツ ${s.parts} / HP ${s.hits}</div>
                     <div class="hint">構造物 ${s.structures} / エネルギー ${s.energy} / flag ${s.flags}</div>
@@ -610,10 +636,12 @@ function renderUnitDetail() {
         .join(", ");
     const mine = view.state.actions.filter(([id]) => id === c.id);
     const acted = mine.length === 0 ? "-" : mine.map(([, code]) => ACTION_NAME[code] ?? code).join(", ");
+    const p = view.timeline.doc.meta.players[c.side];
+    const sideName = escapeHtml(formatPlayer(p, c.side));
     el.innerHTML = `
         <dl class="kv">
             <dt>id</dt><dd>${escapeHtml(c.id)}</dd>
-            <dt>陣営</dt><dd style="color:${sideColor(c.side)}">${escapeHtml(view.timeline.doc.meta.players[c.side]?.username ?? c.side)}</dd>
+            <dt>陣営</dt><dd style="color:${sideColor(c.side)}">${sideName}</dd>
             <dt>位置</dt><dd>(${c.x}, ${c.y})</dd>
             <dt>HP</dt><dd>${c.hits} / ${c.hitsMax}</dd>
             <dt>疲労</dt><dd>${c.fatigue}</dd>
@@ -626,7 +654,7 @@ function renderUnitDetail() {
 function renderLegend() {
     const players = view.timeline.doc.meta.players;
     const items = [
-        ...players.map((p, i) => ({ color: sideColor(i), label: escapeHtml(p.username ?? `side ${i}`) })),
+        ...players.map((p, i) => ({ color: sideColor(i), label: escapeHtml(formatPlayer(p, `side ${i}`)) })),
         { color: ROLE_COLOR.attack, label: "attack" },
         { color: ROLE_COLOR.ranged_attack, label: "ranged" },
         { color: ROLE_COLOR.heal, label: "heal" },
@@ -757,12 +785,7 @@ async function loadReplayList() {
             el.innerHTML = `<p class="hint">${escapeHtml(data.dir)} に何も無い。<br><code>arena-tools fetch &lt;URL&gt;</code> で取ってくる</p>`;
             return;
         }
-        el.innerHTML = data.replays
-            .map(
-                (r) =>
-                    `<button class="match" data-file="${escapeHtml(r.file)}">${escapeHtml(r.file)}<div class="row2">${(r.bytes / 1024).toFixed(0)} KB — ${escapeHtml(r.modified.slice(0, 16).replace("T", " "))}</div></button>`,
-            )
-            .join("");
+        el.innerHTML = data.replays.map(renderReplayItem).join("");
         for (const raw of el.querySelectorAll(".match")) {
             const btn = /** @type {HTMLElement} */ (raw);
             btn.addEventListener("click", async () => {
@@ -775,6 +798,53 @@ async function loadReplayList() {
     } catch {
         el.innerHTML = '<p class="hint">一覧を取得できない（サーバ経由で開いているか確認）</p>';
     }
+}
+
+function renderReplayItem(r) {
+    const fileEscaped = escapeHtml(r.file);
+    const sizeKb = (r.bytes / 1024).toFixed(0);
+
+    if (!r.meta || !Array.isArray(r.meta.players) || r.meta.players.length === 0) {
+        const modStr = escapeHtml(r.modified.slice(0, 16).replace("T", " "));
+        return `
+            <button class="match" data-file="${fileEscaped}">
+                <div class="match-file">${fileEscaped}</div>
+                <div class="match-sub row2">${sizeKb} KB — ${modStr}</div>
+            </button>`;
+    }
+
+    const m = r.meta;
+    const players = m.players;
+    const isDraw = m.result?.draw === true;
+    const winnerIdx = isDraw ? null : (m.result?.winner ?? null);
+
+    const playersHtml = players
+        .map((p, i) => {
+            const name = escapeHtml(p.username ?? p.slot ?? `side ${i}`);
+            const ver = p.codeVersion !== null && p.codeVersion !== undefined ? ` <span class="ver">v${escapeHtml(p.codeVersion)}</span>` : "";
+            const isWinner = winnerIdx === i;
+            const color = p.color ?? FALLBACK_SIDE_COLOR[i] ?? NEUTRAL;
+            const crown = isWinner ? '<span class="crown" title="勝者">👑</span>' : "";
+            return `<span class="player-entry ${isWinner ? "winner" : ""}" style="color:${color}">${crown}<span class="player-name">${name}</span>${ver}</span>`;
+        })
+        .join('<span class="vs">vs</span>');
+
+    const drawBadge = isDraw ? '<span class="draw-badge">引分</span>' : "";
+    const ticksStr = m.ticks ? `${m.ticks}t` : "";
+    const dateStr = (m.createdAt ?? r.modified).slice(5, 16).replace("T", " ");
+    const metaDetails = [ticksStr, `${sizeKb} KB`, dateStr].filter(Boolean).join(" · ");
+
+    return `
+        <button class="match" data-file="${fileEscaped}">
+            <div class="match-players">
+                ${playersHtml}
+                ${drawBadge}
+            </div>
+            <div class="match-sub row2">
+                <div class="match-file" title="${fileEscaped}">${fileEscaped}</div>
+                <div class="match-details">${escapeHtml(metaDetails)}</div>
+            </div>
+        </button>`;
 }
 
 async function loadPlugins() {

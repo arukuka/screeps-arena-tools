@@ -37,11 +37,21 @@ export function isReplayDoc(value) {
 
 /** 試合の要約を 1 行に。CLI の出力用 */
 export function describeReplay(doc) {
-    const names = doc.meta.players.map((p) => p.username ?? p.slot).join(" vs ");
-    const result = doc.meta.result.draw
-        ? "draw"
-        : doc.meta.result.winnerName
-          ? `winner: ${doc.meta.result.winnerName}`
-          : "result: unknown";
+    const formatPlayer = (p) => {
+        const name = p.username ?? p.slot;
+        return p.codeVersion !== null && p.codeVersion !== undefined ? `${name} (v${p.codeVersion})` : name;
+    };
+    const names = doc.meta.players.map(formatPlayer).join(" vs ");
+    let result = "result: unknown";
+    if (doc.meta.result.draw) {
+        result = "draw";
+    } else if (doc.meta.result.winner !== null && doc.meta.result.winner !== undefined) {
+        const winner = doc.meta.players[doc.meta.result.winner];
+        const winnerName = doc.meta.result.winnerName ?? winner?.username ?? `side ${doc.meta.result.winner}`;
+        const ver = winner?.codeVersion !== null && winner?.codeVersion !== undefined ? ` (v${winner.codeVersion})` : "";
+        result = `winner: ${winnerName}${ver}`;
+    } else if (doc.meta.result.winnerName) {
+        result = `winner: ${doc.meta.result.winnerName}`;
+    }
     return `${names} — ${doc.meta.ticks} ticks, ${result}`;
 }

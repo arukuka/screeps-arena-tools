@@ -39,6 +39,20 @@ test("リプレイ以外は一覧に出さない", () => {
     assert.ok(names.every((n) => n.endsWith(".json") || n.endsWith(".json.gz")));
 });
 
+test("リプレイ一覧で対戦者・バージョン・勝敗のメタ情報を抽出する", () => {
+    const found = listReplays(resolve(ROOT, "test/fixtures"));
+    const item = found.find((f) => f.file === "XTTCQ7DA4T.replay.json.gz");
+    assert.ok(item);
+    assert.ok(item.meta);
+    assert.equal(item.meta.shortId, "XTTCQ7DA4T");
+    assert.equal(item.meta.players.length, 2);
+    assert.equal(item.meta.players[0].username, "arukuka");
+    assert.equal(item.meta.players[0].codeVersion, 17);
+    assert.equal(item.meta.players[1].username, "Opponent");
+    assert.equal(item.meta.players[1].codeVersion, 21);
+    assert.equal(item.meta.result.draw, true);
+});
+
 test("既定の置き場を解決する", () => {
     const opts = resolveServeOptions(ROOT, {});
     assert.equal(opts.viewerDir, resolve(ROOT, "viewer"));

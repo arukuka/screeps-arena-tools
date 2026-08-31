@@ -11,6 +11,7 @@
 import { createServer } from "node:http";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { extname, join, normalize, resolve, sep } from "node:path";
+import { readReplay } from "./replay_io.js";
 
 export const DEFAULT_PORT = 5544;
 
@@ -75,8 +76,25 @@ export function listReplays(dir) {
     return readdirSync(dir)
         .filter((f) => f.endsWith(".json") || f.endsWith(".json.gz"))
         .map((file) => {
-            const st = statSync(join(dir, file));
-            return { file, bytes: st.size, modified: st.mtime.toISOString() };
+            const fullPath = join(dir, file);
+            const st = statSync(fullPath);
+            let meta = null;
+            try {
+                const doc = readReplay(fullPath);
+                if (doc?.meta) {
+                    meta = {
+                        shortId: doc.meta.shortId ?? null,
+                        players: doc.meta.players ?? [],
+                        result: doc.meta.result ?? null,
+                        ticks: doc.meta.ticks ?? null,
+                        ticksLimit: doc.meta.ticksLimit ?? null,
+                        createdAt: doc.meta.createdAt ?? null,
+                    };
+                }
+            } catch {
+                // 読めない・壊れている・別形式の場合は meta: null でフォールバック
+            }
+            return { file, bytes: st.size, modified: st.mtime.toISOString(), meta };
         })
         .sort((a, b) => b.modified.localeCompare(a.modified));
 }
