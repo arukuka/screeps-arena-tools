@@ -1,10 +1,9 @@
 /**
- * 正規化リプレイの読み書き。fs と zlib はここに閉じる。
+ * Reading and writing of normalized replay documents (fs and zlib encapsulated here).
  *
- * 既定は gzip 圧縮した JSON（`*.replay.json.gz`）。差分にした時点で十分小さいが、
- * 座標や HP の並びは繰り返しが多く gzip がさらによく効く（実測で 1/16）。
- * ビューアの静的サーバは `Content-Encoding: gzip` を付けてそのまま返すので、
- * ブラウザ側は圧縮を意識しなくてよい。
+ * Default format is gzip-compressed JSON (`*.replay.json.gz`).
+ * The static HTTP server serves them with `Content-Encoding: gzip`, allowing
+ * browsers to decompress transparently.
  */
 
 import { gunzipSync, gzipSync } from "node:zlib";
@@ -12,7 +11,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 
 import { REPLAY_FORMAT } from "./normalize.js";
 
-/** `*.json.gz` でも素の `*.json` でも読む */
+/** Read either a plain `*.json` or compressed `*.json.gz` replay file. */
 export function readReplay(path) {
     const raw = readFileSync(path);
     const text = path.endsWith(".gz") ? gunzipSync(raw).toString("utf-8") : raw.toString("utf-8");
@@ -20,8 +19,8 @@ export function readReplay(path) {
 }
 
 /**
- * 書き出す。拡張子が `.gz` なら圧縮する。
- * @returns {number} 書いたバイト数
+ * Write a replay document. Compresses with gzip if the file ends with `.gz`.
+ * @returns {number} Bytes written
  */
 export function writeReplay(path, doc) {
     const json = JSON.stringify(doc);
@@ -30,12 +29,12 @@ export function writeReplay(path, doc) {
     return body.byteLength;
 }
 
-/** 正規化済みか、生の取得結果か。ビューアと変換コマンドで分岐に使う */
+/** Check whether an object is a normalized replay document. */
 export function isReplayDoc(value) {
     return Boolean(value) && typeof value === "object" && value.format === REPLAY_FORMAT;
 }
 
-/** 試合の要約を 1 行に。CLI の出力用 */
+/** Format a single-line summary of a match document for CLI output. */
 export function describeReplay(doc) {
     const formatPlayer = (p) => {
         const name = p.username ?? p.slot;

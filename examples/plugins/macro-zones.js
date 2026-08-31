@@ -1,50 +1,47 @@
 /**
- * 例: Macro のゾーン配分を描くプラグイン。
+ * Example plugin: Visualizes macro zone assignments.
  *
- * 本体は「誰の試合でも読める情報」だけを描く。ゾーン配分のような
- * 自分のボットにしか無い概念はここで足す。**本体の fork は要らない。**
+ * The core viewer renders universal game data. Custom bot-specific concepts
+ * like zone allocations are added here without forking the codebase.
  *
  * ------------------------------------------------------------------
- * ボット側の仕込み
+ * Bot-side telemetry
  * ------------------------------------------------------------------
- * 毎 Tick、あるいは配分を決め直した Tick だけ、次の 2 行を出す。
+ * Emit these lines periodically or whenever allocations change:
  *
  * ```js
- * // 陣営ごとのゾーン配分（自陣ぶんだけ分かれば足りるなら片側でよい）
+ * // Team zone ratios (can emit for own side only)
  * console.log(`@zones ${JSON.stringify({ 0: [3, 2, 1] })}`);
- * // creep がどのゾーンを担当しているか
+ * // Creep zone assignment
  * console.log(`@creepZone ${JSON.stringify({ "335": 0, "340": 2 })}`);
  * ```
  *
  * ------------------------------------------------------------------
- * 使い方
+ * Usage
  * ------------------------------------------------------------------
- * ```
+ * ```bash
  * arena-tools view --plugins ./examples/plugins
  * ```
  *
- * 自分のリポジトリに置いたままでもよい:
- * ```
+ * Or load from your bot's repository:
+ * ```bash
  * arena-tools view --plugins ~/my-bot/arena-plugins
  * ```
  *
- * `@zones` を含まないログ（他人の試合）では、このプラグインは自動的に寝る。
+ * In matches without `@zones`, this plugin automatically sleeps.
  */
 
 const ZONE_NAMES = ["DEFENSE", "CENTER", "ASSAULT"];
 const ZONE_COLOR = ["#8ee0ff", "#ffd166", "#ff5d8f"];
 
-/** メタ情報は必ず配列で入る（同じ Tick に複数回出せるため）。最後の 1 件を採る */
+/** Metadata is always an array; extract the latest entry. */
 const latest = (ext, ns) => {
     const values = ext?.[ns];
     return Array.isArray(values) && values.length > 0 ? values[values.length - 1] : null;
 };
 
 /**
- * 直近に判明しているゾーン情報を遡って探す。
- *
- * 配分は「決め直した Tick だけ」出す運用もあるので、
- * その Tick に無ければ手前を見に行かないと大半の Tick で何も出せない。
+ * Look backward for recent metadata if not present on the exact current tick.
  */
 function lookback(api, ns, maxBack = 200) {
     for (let k = api.tick; k >= Math.max(0, api.tick - maxBack); k--) {
@@ -57,14 +54,14 @@ function lookback(api, ns, maxBack = 200) {
 export default {
     name: "macro-zones",
 
-    // このどちらかがログに無ければ、本体が自動的にこのプラグインを無効にする
+    // Automatically disabled if neither namespace appears in logs
     requires: ["zones", "creepZone"],
 
-    toggles: [{ id: "macro-zones", label: "ゾーン", default: true }],
+    toggles: [{ id: "macro-zones", label: "Zones", default: true }],
 
     legend: ZONE_NAMES.map((label, i) => ({ color: ZONE_COLOR[i], label })),
 
-    /** creep の担当ゾーンを、円の外側にリングで重ねる */
+    /** Render creep zone assignments as colored outer rings */
     drawOverlay(api) {
         if (!api.isToggled("macro-zones")) return;
         const assign = lookback(api, "creepZone");
@@ -85,11 +82,11 @@ export default {
     panels: [
         {
             id: "macro-zones",
-            title: "Macro ゾーン配分",
+            title: "Macro Zone Allocation",
             render(el, api) {
                 const zones = lookback(api, "zones");
                 if (zones === null) {
-                    el.innerHTML = '<p class="hint">この Tick までに @zones が無い</p>';
+                    el.innerHTML = '<p class="hint">No @zones before this tick</p>';
                     return;
                 }
                 el.innerHTML = Object.entries(zones)

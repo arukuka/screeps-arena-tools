@@ -1,11 +1,8 @@
 /**
- * ビューアの配信。
+ * Static file and replay server for the browser viewer.
  *
- * `viewer/` の静的ファイル、`src/` の共有モジュール、そして手元のリプレイを返すだけの
- * 小さな HTTP サーバ。依存を増やさないため `node:http` だけで書く。
- *
- * ビューアが `src/` の JS をそのまま import できるので、変換処理を
- * Node 側とブラウザ側で二重に持たずに済む（ビルド工程も要らない）。
+ * Lightweight HTTP server serving `viewer/` assets, `src/` modules, and replay files.
+ * Uses `node:http` with zero external dependencies.
  */
 
 import { createServer } from "node:http";
@@ -25,17 +22,14 @@ const CONTENT_TYPES = {
 };
 
 /**
- * `root` の外に出る要求を弾く。
- *
- * 手元で見るためのサーバとはいえ、`..` でホームディレクトリまで読めるものを
- * 立ち上げるのは筋が悪い。
+ * Prevent path traversal outside the designated root directory.
  */
 export function safeJoin(root, urlPath) {
     let decoded;
     try {
         decoded = decodeURIComponent(urlPath);
     } catch {
-        return null; // 壊れた %エスケープ
+        return null; // Malformed %-escape sequence
     }
     if (decoded.includes("\0")) return null;
     const target = normalize(join(root, decoded.replace(/^\/+/, "")));
@@ -51,7 +45,6 @@ function sendFile(res, path) {
         "content-type": CONTENT_TYPES[extname(logical)] ?? "application/octet-stream",
         "cache-control": "no-cache",
     };
-    // 圧縮したまま返し、伸長はブラウザに任せる
     if (gzipped) headers["content-encoding"] = "gzip";
     const body = readFileSync(path);
     headers["content-length"] = String(body.byteLength);
@@ -70,7 +63,7 @@ const sendText = (res, status, text) => {
     res.end(text);
 };
 
-/** リプレイ置き場を舐めて一覧を作る */
+/** Scan replay directory and construct file metadata list. */
 export function listReplays(dir) {
     if (!existsSync(dir)) return [];
     return readdirSync(dir)
@@ -92,7 +85,7 @@ export function listReplays(dir) {
                     };
                 }
             } catch {
-                // 読めない・壊れている・別形式の場合は meta: null でフォールバック
+                // Fallback to meta: null if unreadable or invalid format
             }
             return { file, bytes: st.size, modified: st.mtime.toISOString(), meta };
         })
@@ -113,7 +106,6 @@ export function handleRequest(opts, req, res) {
         return;
     }
 
-    // 置き場ごとにルートを分ける。どれも読み出し専用
     const routes = [
         ["/replays/", opts.replayDir],
         ["/plugins/", opts.pluginDir],
@@ -156,7 +148,7 @@ export function serve(opts) {
     return server;
 }
 
-/** CLI から渡された部分的な設定を、絶対パスに解決した完全な設定にする */
+/** Resolve partial serve options to absolute paths and defaults. */
 export function resolveServeOptions(rootDir, options = {}) {
     return {
         port: options.port ?? DEFAULT_PORT,

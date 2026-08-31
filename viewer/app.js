@@ -1,11 +1,9 @@
 /*
- * Screeps: Arena リプレイビューア。
+ * Screeps: Arena Replay Viewer.
  *
- * ここが描くのは **誰の試合からでも読み取れる情報だけ**。
- * ボット固有の内部状態（役割分担・作戦モードなど）は扱わない。
- * それらはコンソールログのメタ情報として運ばれ、プラグインが描く（`plugin.js`）。
- *
- * 状態の復元は `../src/timeline.js`、ここは描画と UI に徹する。
+ * Renders universal match information (terrain, structures, creeps, actions, energy, flags).
+ * Bot-specific state is transported via log metadata and rendered by plugins (`plugin.js`).
+ * State management and timeline logic are in `../src/timeline.js`.
  */
 
 import {
@@ -22,21 +20,21 @@ import { normalizeMatch } from "../src/normalize.js";
 import { PluginHost, pluginsFromQuery } from "./plugin.js";
 
 // ============================================================
-// 定数
+// Constants
 // ============================================================
 
-/** 陣営色の既定値。リプレイが `playerColor` を持っていればそちらを優先する */
+/** Default side colors (overridden by replay `playerColor` if present). */
 const FALLBACK_SIDE_COLOR = ["#4aa8ff", "#ff7a5c"];
 const NEUTRAL = "#6b7787";
 
-/** 地形の色。`decodeTerrain` のコード（0=plain / 1=wall / 2=swamp）順 */
+/** Terrain colors matching `decodeTerrain` indices (0=plain / 1=wall / 2=swamp). */
 const TERRAIN_RGB = [
     [18, 24, 31],
     [0, 0, 0],
     [29, 42, 31],
 ];
 
-/** 主戦力パーツの色。creep 中心の点に出す */
+/** Combat part indicator colors displayed as center dots on creeps. */
 const ROLE_COLOR = {
     attack: "#ff5d5d",
     ranged_attack: "#ffd166",
@@ -52,13 +50,11 @@ const ACTION_COLOR = {
 };
 
 const $ = (id) => document.getElementById(id);
-/** `value` / `checked` を触る要素用。`getElementById` は HTMLElement しか返さない */
 const $input = (id) => /** @type {HTMLInputElement} */ ($(id));
-/** イベント発火元を入力要素として読む */
 const inputOf = (e) => /** @type {HTMLInputElement} */ (e.target);
 
 // ============================================================
-// 表示状態
+// View State
 // ============================================================
 
 const board = /** @type {HTMLCanvasElement} */ ($("board"));
@@ -92,7 +88,7 @@ const view = {
 
 const sideColor = (side) => (side === null || side === undefined ? NEUTRAL : view.sideColors[side] ?? NEUTRAL);
 
-/** 色に不透明度を掛ける。`#rrggbb` 前提（API の playerColor もこの形） */
+/** Apply alpha transparency to hex color `#rrggbb`. */
 function fade(hex, alpha) {
     const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex ?? "");
     if (m === null) return hex;
@@ -100,10 +96,10 @@ function fade(hex, alpha) {
 }
 
 // ============================================================
-// 読み込み
+// Loading
 // ============================================================
 
-/** `.gz` はブラウザ側で伸長する（ドラッグ&ドロップ経路。HTTP 経由なら透過的に伸長済み） */
+/** Decompress `.gz` files client-side if loaded via drag-and-drop. */
 async function readReplayFile(file) {
     if (file.name.endsWith(".gz")) {
         const stream = file.stream().pipeThrough(new DecompressionStream("gzip"));
@@ -112,13 +108,7 @@ async function readReplayFile(file) {
     return JSON.parse(await file.text());
 }
 
-/**
- * 読んだ JSON をリプレイとして受け入れる。
- *
- * 生の取得結果（`fetch_match` が保存した形）でもそのまま開けるようにしてある。
- * ただし生は 1 試合で数百 MB になりうるので、その場でブラウザに変換させるのは
- * 小さい試合に限る話。常用するなら `arena-tools convert` を通すこと。
- */
+/** Accept either normalized replay JSON or raw match dump JSON. */
 function acceptDocument(json, label) {
     const doc = json?.format === "screeps-arena-replay" ? json : normalizeMatch(json);
     loadReplay(doc, label);
@@ -127,7 +117,6 @@ function acceptDocument(json, label) {
 function loadReplay(doc, label) {
     view.timeline = buildTimeline(doc);
     view.series = buildSeries(view.timeline);
-    // プラグインが過去 Tick のメタ情報を遡って探せるように索引を張る
     view.extIndex = new Map(doc.ticks.filter((t) => t.e !== undefined).map((t) => [t.k, t.e]));
     view.sideColors = doc.meta.players.map((p, i) => p.color ?? FALLBACK_SIDE_COLOR[i] ?? NEUTRAL);
     view.terrainCanvas = buildTerrainCanvas(view.timeline);
@@ -146,7 +135,6 @@ function loadReplay(doc, label) {
     renderMatchInfo(doc);
     resizeBoard();
     seek(0);
-    // 凡例は最初の描画の後。描画中に落ちて無効化されたプラグインの項目を残さない
     renderLegend();
     renderPluginList();
 }
@@ -169,16 +157,11 @@ const describe = (doc) => {
     return `${names} (${doc.meta.shortId ?? doc.meta.gameId ?? "?"})`;
 };
 
-/**
- * グラフ用の時系列を 1 回の前進走査で作る。
- *
- * 毎フレーム `stateAt` を呼び直すとスクラブのたびに全 Tick を舐めることになる。
- */
+/** Build time-series data for the scrubber chart in a single forward pass. */
 function buildSeries(timeline) {
     const sides = timeline.doc.meta.players.length;
     const parts = Array.from({ length: sides }, () => new Int32Array(timeline.length));
     const counts = Array.from({ length: sides }, () => new Int32Array(timeline.length));
-    /** flag の持ち主が変わった Tick。試合の山場の目印として縦線を引く */
     const captures = [];
 
     const creeps = new Map();
@@ -225,7 +208,7 @@ function buildTerrainCanvas(timeline) {
 }
 
 // ============================================================
-// 盤面の描画
+// Board Rendering
 // ============================================================
 
 function applyBoardTransform() {
@@ -270,7 +253,6 @@ function resizeBoard() {
     render();
 }
 
-/** 壊れた構造物か。差分は破壊を「HP 0」で残す（配列から消えたことの墓標） */
 const isDestroyed = (o, cur) => o.hitsMax > 0 && (cur === undefined || cur.hits <= 0);
 
 function drawStructures(ctx, cell) {
@@ -294,7 +276,6 @@ function drawStructures(ctx, cell) {
                 ctx.fillRect(x, y, cell, cell);
                 break;
             case "extension": {
-                // 大きさは cell より一回り小さく、残エネルギーは透明度で示す
                 const ratio = o.energyCapacity > 0 ? (cur?.energy ?? 0) / o.energyCapacity : 0;
                 const clamped = Math.max(0, Math.min(1, ratio));
                 const size = cell * 0.7;
@@ -317,7 +298,6 @@ function drawStructures(ctx, cell) {
                 ctx.strokeStyle = sideColor(side);
                 ctx.lineWidth = Math.max(1, cell * 0.25);
                 ctx.strokeRect(x - size / 2 + cell / 2, y - size / 2 + cell / 2, size, size);
-                // 破壊された Spawn は×で潰す。勝敗に直結するので目立たせる
                 if (isDestroyed(o, cur)) {
                     ctx.beginPath();
                     ctx.moveTo(x - size / 2 + cell / 2, y - size / 2 + cell / 2);
@@ -348,7 +328,6 @@ function drawStructures(ctx, cell) {
     }
 }
 
-/** body のうち最も多い戦闘パーツ。creep の役割の当たりを付ける */
 function dominantPart(body) {
     const counts = bodyCounts(body);
     let best = null;
@@ -363,7 +342,6 @@ function dominantPart(body) {
 }
 
 function creepRadius(body, cell) {
-    // パーツ数の平方根で伸ばす。線形だと 40 パーツの creep が盤を覆ってしまう
     const size = bodySize(body);
     return cell * (0.45 + 0.55 * Math.min(1, Math.sqrt(size) / 6));
 }
@@ -377,7 +355,6 @@ function drawCreeps(ctx, cell) {
 
         ctx.beginPath();
         ctx.arc(cx, cy, r, 0, Math.PI * 2);
-        // spawning 中はまだ盤に出ていないのと同じ。薄くして数に入れないと分かるように
         ctx.fillStyle = c.spawning ? fade(color, 0.25) : fade(color, 0.75);
         ctx.fill();
 
@@ -387,7 +364,6 @@ function drawCreeps(ctx, cell) {
             ctx.stroke();
         }
 
-        // 残 HP を外周の弧で。円の大きさ（パーツ数）と混ざらないよう外側に置く
         if (c.hitsMax > 0 && c.hits < c.hitsMax) {
             ctx.beginPath();
             ctx.arc(cx, cy, r + Math.max(1, cell * 0.28), -Math.PI / 2, -Math.PI / 2 + (Math.PI * 2 * c.hits) / c.hitsMax);
@@ -410,7 +386,6 @@ function drawActions(ctx, cell) {
     const state = view.state;
     for (const entry of state.actions) {
         const [id, code, tx, ty] = entry;
-        // 受けた側の記録は撃った側と重複する。線が二重になるので描かない
         if (INCOMING_ACTIONS.has(code)) continue;
         const actor = state.creeps.get(id) ?? view.timeline.objectById.get(id);
         if (actor === undefined) continue;
@@ -419,7 +394,6 @@ function drawActions(ctx, cell) {
         const color = ACTION_COLOR[code] ?? "#d7e0ea";
 
         if (tx === undefined) {
-            // rangedMassAttack は対象を持たない。効果範囲を円で示す
             ctx.beginPath();
             ctx.arc(ax, ay, cell * 3, 0, Math.PI * 2);
             ctx.strokeStyle = fade(color, 0.5);
@@ -449,7 +423,6 @@ function render() {
     drawCreeps(boardCtx, cell);
     if (view.showActions) drawActions(boardCtx, cell);
 
-    // プラグインは本体の描画の上に重ねる。本体の絵を壊されないよう状態を退避する
     boardCtx.save();
     plugins.drawOverlay(pluginApi());
     boardCtx.restore();
@@ -464,7 +437,6 @@ function render() {
     $input("scrubber").value = String(view.index);
 }
 
-/** プラグインに渡す取っ手。本体の内部構造をそのまま晒さないよう最小限にする */
 function pluginApi() {
     return {
         ctx: boardCtx,
@@ -484,7 +456,7 @@ function pluginApi() {
 }
 
 // ============================================================
-// グラフ
+// Scrubber Chart
 // ============================================================
 
 function renderChart() {
@@ -501,7 +473,7 @@ function renderChart() {
     const n = view.timeline.length;
     const xOf = (i) => (n <= 1 ? 0 : (i / (n - 1)) * w);
 
-    // flag の持ち主が変わった Tick
+    // Flag capture markers
     chartCtx.strokeStyle = "rgba(255,209,102,0.35)";
     chartCtx.lineWidth = 1;
     for (const i of captures) {
@@ -511,7 +483,7 @@ function renderChart() {
         chartCtx.stroke();
     }
 
-    // 陣営ごとの総パーツ数。creep 数より戦力の実態に近い
+    // Total body parts per side
     for (let side = 0; side < parts.length; side++) {
         chartCtx.beginPath();
         for (let i = 0; i < n; i++) {
@@ -533,27 +505,27 @@ function renderChart() {
 }
 
 // ============================================================
-// 右サイドのパネル
+// Inspector Panels
 // ============================================================
 
 function renderMatchInfo(doc) {
     const m = doc.meta;
-    let result = "不明";
+    let result = "Unknown";
     if (m.result.draw) {
-        result = "引き分け";
+        result = "Draw";
     } else if (m.result.winner !== null && m.result.winner !== undefined) {
         const p = m.players[m.result.winner];
         const pName = formatPlayer(p, m.result.winnerName ?? `side ${m.result.winner}`);
-        result = `${pName} 勝利 👑`;
+        result = `${pName} Won 👑`;
     } else if (m.result.winnerName) {
-        result = `${m.result.winnerName} 勝利 👑`;
+        result = `${m.result.winnerName} Won 👑`;
     }
     const rows = [
-        ["試合", m.shortId ?? "-"],
-        ["日時", m.createdAt ? m.createdAt.replace("T", " ").slice(0, 19) : "-"],
+        ["Match", m.shortId ?? "-"],
+        ["Date", m.createdAt ? m.createdAt.replace("T", " ").slice(0, 19) : "-"],
         ["Tick", `${m.ticks}${m.ticksLimit ? ` / ${m.ticksLimit}` : ""}`],
-        ["結果", result],
-        ["盤面", `${m.width}x${m.height}`],
+        ["Result", result],
+        ["Board", `${m.width}x${m.height}`],
     ];
     if (m.url) rows.push(["URL", `<a href="${m.url}" target="_blank" rel="noopener">${m.shortId}</a>`]);
     $("match-info").innerHTML = rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
@@ -572,14 +544,14 @@ function renderSideStats() {
             const player = players[i];
             const name = escapeHtml(formatPlayer(player, `side ${i}`));
             const isWinner = result && !result.draw && result.winner === i;
-            const crown = isWinner ? ' <span title="勝者">👑</span>' : "";
+            const crown = isWinner ? ' <span title="Winner">👑</span>' : "";
             const width = ((s.parts / maxParts) * 100).toFixed(1);
             return `
                 <div class="side-block">
                     <div class="side-name" style="color:${sideColor(i)}">${name}${crown}</div>
                     <div class="bar"><span style="width:${width}%;background:${sideColor(i)}"></span></div>
-                    <div>creep ${s.creeps} / パーツ ${s.parts} / HP ${s.hits}</div>
-                    <div class="hint">構造物 ${s.structures} / エネルギー ${s.energy} / flag ${s.flags}</div>
+                    <div>creep ${s.creeps} / parts ${s.parts} / HP ${s.hits}</div>
+                    <div class="hint">structures ${s.structures} / energy ${s.energy} / flag ${s.flags}</div>
                 </div>`;
         })
         .join("");
@@ -590,7 +562,7 @@ function renderActionList() {
     const el = $("action-list");
     if (actions.length === 0) {
         el.className = "action-list hint";
-        el.textContent = "なし";
+        el.textContent = "None";
         return;
     }
     el.className = "action-list";
@@ -610,7 +582,7 @@ function renderConsoleLog() {
     const el = $("console-log");
     if (!text) {
         el.className = "console-log hint";
-        el.textContent = "なし";
+        el.textContent = "None";
         return;
     }
     el.className = "console-log";
@@ -621,13 +593,13 @@ function renderUnitDetail() {
     const el = $("unit-detail");
     if (view.selected === null) {
         el.className = "hint";
-        el.textContent = "盤面のユニットをクリック";
+        el.textContent = "Click a unit on the board";
         return;
     }
     const c = view.state.creeps.get(view.selected);
     if (c === undefined) {
         el.className = "hint";
-        el.textContent = `${view.selected} はこの Tick には居ない`;
+        el.textContent = `${view.selected} is not present in this tick`;
         return;
     }
     el.className = "";
@@ -641,13 +613,13 @@ function renderUnitDetail() {
     el.innerHTML = `
         <dl class="kv">
             <dt>id</dt><dd>${escapeHtml(c.id)}</dd>
-            <dt>陣営</dt><dd style="color:${sideColor(c.side)}">${sideName}</dd>
-            <dt>位置</dt><dd>(${c.x}, ${c.y})</dd>
+            <dt>Side</dt><dd style="color:${sideColor(c.side)}">${sideName}</dd>
+            <dt>Pos</dt><dd>(${c.x}, ${c.y})</dd>
             <dt>HP</dt><dd>${c.hits} / ${c.hitsMax}</dd>
-            <dt>疲労</dt><dd>${c.fatigue}</dd>
-            <dt>パーツ</dt><dd>${bodySize(c.body)}</dd>
-            <dt>構成</dt><dd>${escapeHtml(body)}</dd>
-            <dt>行動</dt><dd>${escapeHtml(acted)}</dd>
+            <dt>Fatigue</dt><dd>${c.fatigue}</dd>
+            <dt>Parts</dt><dd>${bodySize(c.body)}</dd>
+            <dt>Body</dt><dd>${escapeHtml(body)}</dd>
+            <dt>Action</dt><dd>${escapeHtml(acted)}</dd>
         </dl>`;
 }
 
@@ -658,8 +630,8 @@ function renderLegend() {
         { color: ROLE_COLOR.attack, label: "attack" },
         { color: ROLE_COLOR.ranged_attack, label: "ranged" },
         { color: ROLE_COLOR.heal, label: "heal" },
-        { color: ACTION_COLOR.a, label: "攻撃", line: true },
-        { color: ACTION_COLOR.h, label: "回復", line: true },
+        { color: ACTION_COLOR.a, label: "attack", line: true },
+        { color: ACTION_COLOR.h, label: "heal", line: true },
         ...plugins.legend(),
     ];
     $("legend").innerHTML = items
@@ -668,13 +640,13 @@ function renderLegend() {
 }
 
 // ============================================================
-// プラグインの UI
+// Plugin UI
 // ============================================================
 
 function renderPluginList() {
     const el = $("plugin-list");
     if (plugins.entries.length === 0) {
-        el.innerHTML = '<p class="hint">なし</p>';
+        el.innerHTML = '<p class="hint">None</p>';
         return;
     }
     el.innerHTML = plugins.entries
@@ -683,7 +655,7 @@ function renderPluginList() {
             const cls = e.error !== null ? "failed" : e.active ? "" : "inactive";
             let why = "";
             if (e.error !== null) why = escapeHtml(e.error);
-            else if (!e.active) why = `@${(e.missing ?? []).join(", @")} がログに無い`;
+            else if (!e.active) why = `@${(e.missing ?? []).join(", @")} missing in log`;
             return `<div class="plugin-item ${cls}"><span class="dot"></span><span>${name}</span><span class="why">${why}</span></div>`;
         })
         .join("");
@@ -704,11 +676,6 @@ function renderPluginToggles() {
     }
 }
 
-/**
- * プラグインのパネルを描く。
- *
- * 要素は使い回す。毎 Tick 作り直すと、パネル内の選択やスクロール位置が飛ぶ。
- */
 function renderPluginPanels() {
     const host = $("plugin-panels");
     const panels = plugins.panels();
@@ -733,7 +700,7 @@ function renderPluginPanels() {
 }
 
 // ============================================================
-// 再生制御
+// Playback Control
 // ============================================================
 
 function seek(index) {
@@ -773,7 +740,7 @@ function tickLoop(now) {
 }
 
 // ============================================================
-// 一覧の取得
+// Replay List
 // ============================================================
 
 async function loadReplayList() {
@@ -782,7 +749,7 @@ async function loadReplayList() {
         const res = await fetch("/api/replays");
         const data = await res.json();
         if (data.replays.length === 0) {
-            el.innerHTML = `<p class="hint">${escapeHtml(data.dir)} に何も無い。<br><code>arena-tools fetch &lt;URL&gt;</code> で取ってくる</p>`;
+            el.innerHTML = `<p class="hint">No replays in ${escapeHtml(data.dir)}.<br>Fetch one using: <code>arena-tools fetch &lt;URL&gt;</code></p>`;
             return;
         }
         el.innerHTML = data.replays.map(renderReplayItem).join("");
@@ -796,7 +763,7 @@ async function loadReplayList() {
             });
         }
     } catch {
-        el.innerHTML = '<p class="hint">一覧を取得できない（サーバ経由で開いているか確認）</p>';
+        el.innerHTML = '<p class="hint">Cannot load replay list (check if running via server)</p>';
     }
 }
 
@@ -824,12 +791,12 @@ function renderReplayItem(r) {
             const ver = p.codeVersion !== null && p.codeVersion !== undefined ? ` <span class="ver">v${escapeHtml(p.codeVersion)}</span>` : "";
             const isWinner = winnerIdx === i;
             const color = p.color ?? FALLBACK_SIDE_COLOR[i] ?? NEUTRAL;
-            const crown = isWinner ? '<span class="crown" title="勝者">👑</span>' : "";
+            const crown = isWinner ? '<span class="crown" title="Winner">👑</span>' : "";
             return `<span class="player-entry ${isWinner ? "winner" : ""}" style="color:${color}">${crown}<span class="player-name">${name}</span>${ver}</span>`;
         })
         .join('<span class="vs">vs</span>');
 
-    const drawBadge = isDraw ? '<span class="draw-badge">引分</span>' : "";
+    const drawBadge = isDraw ? '<span class="draw-badge">Draw</span>' : "";
     const ticksStr = m.ticks ? `${m.ticks}t` : "";
     const dateStr = (m.createdAt ?? r.modified).slice(5, 16).replace("T", " ");
     const metaDetails = [ticksStr, `${sizeKb} KB`, dateStr].filter(Boolean).join(" · ");
@@ -854,14 +821,14 @@ async function loadPlugins() {
         const data = await res.json();
         for (const file of data.plugins) wanted.push(`/plugins/${file}`);
     } catch {
-        // プラグイン置き場が無いだけ。本体は動く
+        // Plugin directory optional
     }
     for (const url of [...new Set(wanted)]) await plugins.load(url);
     renderPluginList();
 }
 
 // ============================================================
-// 入力
+// Event Handling
 // ============================================================
 
 function setupEvents() {
@@ -921,7 +888,6 @@ function setupEvents() {
     });
 
     board.addEventListener("click", (e) => {
-        // ドラッグの終点でユニットを選び直してしまわないように
         if (view.hasDragged || view.timeline === null) return;
         const rect = board.getBoundingClientRect();
         const x = Math.floor(((e.clientX - rect.left) / rect.width) * view.timeline.width);
@@ -979,7 +945,6 @@ function setupEvents() {
 
 plugins.onError = (id, message) => {
     console.warn(`[plugin] ${id}: ${message}`);
-    // 落ちたプラグインは切り離される。一覧と凡例をその事実に合わせる
     if (view.timeline !== null) {
         renderPluginList();
         renderLegend();

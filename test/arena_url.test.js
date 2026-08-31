@@ -3,46 +3,44 @@ import { test } from "node:test";
 
 import { matchUrl, parseMatchRef } from "../src/arena_url.js";
 
-test("短縮 ID をそのまま受ける", () => {
+test("accepts short ID directly", () => {
     assert.equal(parseMatchRef("XTTCQ7DA4T"), "XTTCQ7DA4T");
 });
 
-test("共有 URL を貼り付けても通る", () => {
-    // 利用者が最も自然にやる操作。ブラウザからコピーしたまま渡せること
+test("accepts full share URL", () => {
     assert.equal(parseMatchRef("https://arena.screeps.com/game/XTTCQ7DA4T"), "XTTCQ7DA4T");
 });
 
-test("URL の飾り（クエリ・フラグメント・スキーム省略）を落とす", () => {
+test("strips URL decorations (query, fragment, omitted scheme)", () => {
     assert.equal(parseMatchRef("https://arena.screeps.com/game/XTTCQ7DA4T?from=discord"), "XTTCQ7DA4T");
     assert.equal(parseMatchRef("https://arena.screeps.com/game/XTTCQ7DA4T#replay"), "XTTCQ7DA4T");
     assert.equal(parseMatchRef("arena.screeps.com/game/XTTCQ7DA4T"), "XTTCQ7DA4T");
     assert.equal(parseMatchRef("http://arena.screeps.com/game/XTTCQ7DA4T"), "XTTCQ7DA4T");
 });
 
-test("アプリのカスタムスキームも受ける", () => {
+test("accepts app custom scheme URLs", () => {
     assert.equal(parseMatchRef("screeps-arena:/game/XTTCQ7DA4T"), "XTTCQ7DA4T");
 });
 
-test("前後の空白と引用符を落とす", () => {
+test("strips surrounding whitespace and quotes", () => {
     assert.equal(parseMatchRef('  "https://arena.screeps.com/game/XTTCQ7DA4T"  '), "XTTCQ7DA4T");
 });
 
-test("URL 経由なら小文字でも大文字に直す", () => {
+test("converts lowercase URLs to uppercase short IDs", () => {
     assert.equal(parseMatchRef("https://arena.screeps.com/game/xttcq7da4t"), "XTTCQ7DA4T");
 });
 
-test("本物の ObjectId はそのまま通す", () => {
-    // リプレイ API が実際に要求する形。解決済みの ID を直接渡せると調査が楽
+test("passes valid MongoDB ObjectIds through directly", () => {
     assert.equal(parseMatchRef("6a91f24fe5664ad5be8d41a3"), "6a91f24fe5664ad5be8d41a3");
 });
 
-test("解釈できない入力は例外にする", () => {
+test("throws on invalid input", () => {
     assert.throws(() => parseMatchRef(""), /empty/);
-    assert.throws(() => parseMatchRef("https://example.com/"), /試合を特定できない/);
-    assert.throws(() => parseMatchRef("not a match"), /試合を特定できない/);
+    assert.throws(() => parseMatchRef("https://example.com/"), /Cannot resolve match reference/);
+    assert.throws(() => parseMatchRef("not a match"), /Cannot resolve match reference/);
 });
 
-test("matchUrl は共有 URL に戻せる", () => {
+test("matchUrl reconstructs shareable URL", () => {
     assert.equal(matchUrl("XTTCQ7DA4T"), "https://arena.screeps.com/game/XTTCQ7DA4T");
     assert.equal(parseMatchRef(matchUrl("XTTCQ7DA4T")), "XTTCQ7DA4T");
 });

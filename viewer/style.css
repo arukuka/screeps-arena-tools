@@ -1,6 +1,6 @@
 /*
- * Screeps: Arena リプレイビューアのスタイル。
- * 盤面が主役なので、UI は暗い背景に沈めて色の情報量を盤に振る。
+ * Screeps: Arena Replay Viewer styles.
+ * Dark background to prioritize board contrast and entity colors.
  */
 
 :root {
@@ -37,7 +37,7 @@ html, body {
     height: 100vh;
 }
 
-/* --- ヘッダ --- */
+/* --- Header --- */
 .topbar {
     grid-area: top;
     display: flex;
@@ -64,7 +64,7 @@ button:hover, .file-button:hover { border-color: var(--fg-dim); }
 button.primary { background: #223247; border-color: #33506f; }
 button:disabled { opacity: 0.4; cursor: default; }
 
-/* --- サイドバー --- */
+/* --- Sidebar --- */
 .sidebar {
     grid-area: side;
     background: var(--panel);
@@ -170,7 +170,7 @@ button:disabled { opacity: 0.4; cursor: default; }
     font-size: 9.5px;
 }
 
-/* --- 盤面 --- */
+/* --- Stage & Board --- */
 .stage { grid-area: stage; min-width: 0; min-height: 0; display: flex; position: relative; }
 .board-wrap {
     position: relative;
@@ -248,14 +248,8 @@ button:disabled { opacity: 0.4; cursor: default; }
     pointer-events: none;
     z-index: 1;
 }
-/*
- * `hidden` 属性で消えるようにする。
- *
- * ブラウザ既定の `[hidden] { display: none }` は UA スタイルなので、
- * 上で `display: flex` を書いた時点で作者スタイルが勝ってしまい、
- * ログを読み込んで `hidden = true` にしても案内文が残り続ける。
- * display を指定した要素を hidden で隠すには、こちらでも打ち消す必要がある。
- */
+
+/* Explicitly override display:flex when hidden attribute is present */
 .board-empty[hidden] {
     display: none;
 }
@@ -272,7 +266,7 @@ button:disabled { opacity: 0.4; cursor: default; }
     z-index: 5;
 }
 
-/* --- 右パネル --- */
+/* --- Inspector Sidebar --- */
 .inspector {
     grid-area: inspect;
     background: var(--panel);
@@ -295,7 +289,7 @@ button:disabled { opacity: 0.4; cursor: default; }
 .action-row { display: flex; gap: 6px; }
 .action-row .who { color: var(--fg-dim); min-width: 40px; }
 
-/* --- 下部トランスポート --- */
+/* --- Bottom Transport Bar --- */
 .transport {
     grid-area: foot;
     background: var(--panel);
@@ -313,7 +307,7 @@ button:disabled { opacity: 0.4; cursor: default; }
 .legend i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
 .legend i.line { width: 12px; height: 2px; border-radius: 0; }
 
-/* --- コンソールログ --- */
+/* --- Console Log --- */
 .console-log {
     margin: 0;
     max-height: 160px;
@@ -324,7 +318,7 @@ button:disabled { opacity: 0.4; cursor: default; }
     word-break: break-word;
 }
 
-/* --- プラグイン --- */
+/* --- Plugins --- */
 .plugin-list { padding: 4px 0 8px; }
 .plugin-item {
     display: flex;

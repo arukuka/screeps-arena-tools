@@ -1,20 +1,17 @@
 /**
- * 正規化リプレイから「ある Tick の盤面」を復元する。
+ * Reconstruct board states for arbitrary ticks from a normalized replay.
  *
- * 保存形式は差分なので、Tick 1500 を見たければ 0 から順に適用するしかない。
- * スクラブバーを掴んで動かされるたびに 1500 回の適用が走るのは重いので、
- * 一定間隔でキーフレーム（丸ごとの複製）を取っておき、直近のキーフレームから
- * 進める。間隔 `KEYFRAME_STRIDE` は「複製の総量」と「最悪の適用回数」の折り合い。
- *
- * ブラウザと Node のどちらからも読む。DOM にも fs にも触らないこと。
+ * Uses keyframes spaced every `KEYFRAME_STRIDE` ticks to enable fast seeking
+ * without iterating from tick 0 on every scrub.
+ * Pure logic shared across browser and Node.js (no DOM or fs dependencies).
  */
 
 import { decodeTerrain } from "./terrain.js";
 
-/** 何 Tick ごとにキーフレームを取るか */
+/** Keyframe interval (in ticks). */
 export const KEYFRAME_STRIDE = 100;
 
-/** body のランレングス 1 文字コード → 表示名 */
+/** Body run-length code to part name. */
 export const PART_NAME = {
     m: "move",
     w: "work",
@@ -25,7 +22,7 @@ export const PART_NAME = {
     h: "heal",
 };
 
-/** actionLog の 1 文字コード → 表示名 */
+/** Action single-character code to full name. */
 export const ACTION_NAME = {
     a: "attack",
     r: "rangedAttack",
@@ -36,11 +33,11 @@ export const ACTION_NAME = {
     E: "healed",
 };
 
-/** 「撃った側」の記録だけを描きたいときの判定。大文字は受けた側 */
+/** Incoming action codes (recorded on target entity). */
 export const INCOMING_ACTIONS = new Set(["A", "E"]);
 
 /**
- * `"m2a1"` → `[{ code: "m", name: "move", count: 2 }, ...]`
+ * Parse `"m2a1"` into `[{ code: "m", name: "move", count: 2 }, ...]`.
  * @param {string} body
  */
 export function parseBody(body) {
@@ -53,21 +50,21 @@ export function parseBody(body) {
     return out;
 }
 
-/** body のパーツ総数 */
+/** Total number of parts in a body string. */
 export function bodySize(body) {
     let total = 0;
     for (const part of parseBody(body)) total += part.count;
     return total;
 }
 
-/** パーツ種別ごとの枚数。`{ move: 3, attack: 2 }` */
+/** Part counts grouped by type (e.g. `{ move: 3, attack: 2 }`). */
 export function bodyCounts(body) {
     const counts = {};
     for (const part of parseBody(body)) counts[part.name] = (counts[part.name] ?? 0) + part.count;
     return counts;
 }
 
-/** 空の盤面状態 */
+/** Create an empty board state. */
 function emptyState() {
     return {
         tick: 0,
@@ -78,7 +75,7 @@ function emptyState() {
     };
 }
 
-/** 状態の複製。キーフレーム用 */
+/** Deep clone a state object for keyframing. */
 function cloneState(state) {
     return {
         tick: state.tick,
@@ -90,7 +87,7 @@ function cloneState(state) {
 }
 
 /**
- * 1 Tick 分の差分を状態に適用する。
+ * Apply 1 tick's delta changes to a state object.
  * @param {ReturnType<typeof emptyState>} state
  * @param {any} tick
  */
@@ -117,22 +114,21 @@ export function applyFrame(state, tick) {
     for (const [id, hits, energy] of tick.s ?? []) state.struct.set(id, { hits, energy });
     for (const [id, side] of tick.w ?? []) state.owner.set(id, side);
 
-    // 行動は「その Tick 限り」の情報。持ち越すと攻撃線が残り続けてしまう
+    // Actions are transient and valid only for the current tick
     state.actions = tick.a ?? [];
     state.ext = tick.e ?? null;
     return state;
 }
 
 /**
- * リプレイからタイムラインを組む。
+ * Build a timeline and keyframe index from a replay document.
  *
- * @param {any} doc 正規化リプレイ
+ * @param {any} doc Normalized replay document
  */
 export function buildTimeline(doc) {
     const { width, height } = doc.meta;
     const terrain = decodeTerrain(doc.terrain, width, height);
 
-    // 構造物の初期状態。差分は初出以降しか来ないのでここが土台になる
     const base = emptyState();
     for (const o of doc.objects) {
         base.struct.set(o.id, { hits: o.hits, energy: o.energy });
@@ -159,10 +155,9 @@ export function buildTimeline(doc) {
 }
 
 /**
- * `index` 番目の Tick 終了時点の状態を返す。
+ * Return board state at the conclusion of tick at index `index`.
  *
- * 返る状態は使い回しではなく毎回作る。呼び出し側が持ち回って
- * 気づかぬうちに書き換えられる事故を避けるため。
+ * Returns a freshly cloned state to prevent accidental mutations by callers.
  *
  * @param {ReturnType<typeof buildTimeline>} timeline
  * @param {number} index
@@ -177,7 +172,8 @@ export function stateAt(timeline, index) {
 }
 
 /**
- * 陣営ごとの集計。グラフとサイドパネルで使う。
+ * Aggregate summary statistics per side for charts and inspector panels.
+ *
  * @param {ReturnType<typeof buildTimeline>} timeline
  * @param {ReturnType<typeof stateAt>} state
  */

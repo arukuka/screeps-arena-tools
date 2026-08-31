@@ -1,72 +1,71 @@
 # Screeps: Arena Tools
 
-[Screeps: Arena](https://arena.screeps.com/) の対戦リプレイを **取得 → 正規化 → 閲覧** するための道具一式。
-依存パッケージ無し、ビルド工程無し。Node.js だけで動く。
+A zero-dependency, buildless toolchain to **fetch, normalize, and view** [Screeps: Arena](https://arena.screeps.com/) match replays. Runs directly on Node.js.
 
-- **fetch** — 起動中の Screeps: Arena 経由で、自分が見られる試合のリプレイとコンソールログを取得する
-- **正規化** — API が返す毎 Tick の完全スナップショット（1 試合 280MB 超）を差分に畳んで **数十 KB** にする
-- **view** — ブラウザで盤面を再生する。地形・構造物・creep・攻撃/回復・エネルギー・flag の奪取まで
-- **plugins** — ボット固有の内部状態を、**本体を fork せずに**足せる
+- **fetch** — Fetch match replays and console logs accessible by your account via the running Screeps: Arena client
+- **normalize** — Compress raw per-tick complete snapshots (280MB+ per match) into deltas of **tens of kilobytes**
+- **view** — Replay matches in your browser: terrain, structures, creeps, attacks/heals, energy, and flag captures
+- **plugins** — Overlay bot-specific internal state **without forking the codebase**
 
-```
+```bash
 npx arena-tools fetch https://arena.screeps.com/game/XTTCQ7DA4T
 npx arena-tools view
 ```
 
 ---
 
-## 必要なもの
+## Requirements
 
-- **Node.js 20 以上**
-- **macOS**（`fetch` のみ。`view` と `convert` はどの OS でも動く）
-- **Steam 版 Screeps: Arena が起動していて、ログイン済みであること**
+- **Node.js 20+**
+- **macOS** (for `fetch` only; `view` and `convert` work on any OS)
+- **Screeps: Arena (Steam version) running and logged in**
 
-`fetch` は「自分のアカウントで閲覧できる試合」しか取得できない。
-認証を偽造するものではなく、**すでにログインしている自分のクライアントに取りに行かせている**（後述）。
+`fetch` can only retrieve matches that your account has permission to view.
+It does not forge credentials; instead, **it delegates fetching to your already-authenticated local game client** (explained below).
 
 ---
 
-## 使い方
+## Usage
 
-### 取得する
+### Fetch a Match
 
-URL をそのまま貼ってよい。短縮 ID でもよい。
+You can paste either a full URL or a short ID directly:
 
 ```bash
 arena-tools fetch https://arena.screeps.com/game/XTTCQ7DA4T
 arena-tools fetch XTTCQ7DA4T
-arena-tools fetch XTTCQ7DA4T -o replays/vs-kerobee.json.gz
+arena-tools fetch XTTCQ7DA4T -o replays/vs-opponent.json.gz
 ```
 
 ```
 === Screeps: Arena Tools ===
-試合: https://arena.screeps.com/game/XTTCQ7DA4T
+Match: https://arena.screeps.com/game/XTTCQ7DA4T
   found-app: PID 84210
   connected: ws://127.0.0.1:9229/...
   resolved: 6a91f24fe5664ad5be8d41a3 / 2000 ticks
-  取得中 21/21 (tick 2000)
+  fetching 21/21 (tick 2000)
 
-保存: replays/XTTCQ7DA4T.replay.json.gz (28.9 KB)
-  arukuka vs Opponent — 2000 ticks, draw
+Saved: replays/XTTCQ7DA4T.replay.json.gz (28.9 KB)
+  playerA vs playerB — 2000 ticks, draw
 ```
 
-### 見る
+### View Replays
 
 ```bash
 arena-tools view                 # http://localhost:5544/
 arena-tools view --port 8080 --replays ./replays
 ```
 
-| 操作 | |
+| Action | Control |
 | --- | --- |
-| `Space` | 再生 / 一時停止 |
-| `←` `→` | 1 Tick |
-| `Shift` + `←` `→` | 10 Tick |
-| ドラッグ / ホイール | 盤面の移動 / ズーム |
-| ダブルクリック・`0`・`R` | 初期位置に戻す |
-| ファイルをドロップ | その場で開く |
+| Play / Pause | `Space` |
+| Step 1 Tick | `←` `→` |
+| Step 10 Ticks | `Shift` + `←` `→` |
+| Pan / Zoom board | Drag / Scroll wheel |
+| Reset board position & zoom | Double click / `0` / `R` |
+| Open file | Drag & drop file onto the board |
 
-### すでに手元にある生データを変換する
+### Convert Existing Raw Data
 
 ```bash
 arena-tools convert match_XTTCQ7DA4T.json --short-id XTTCQ7DA4T
@@ -75,33 +74,31 @@ arena-tools info replays/XTTCQ7DA4T.replay.json.gz
 
 ---
 
-## なぜ変換するのか
+## Why Normalize?
 
-`/api/game/{id}/replay/{chunk}` が返すのは **差分ではなく毎 Tick の完全スナップショット**。
-100x100 の Arena は構造物だけで 336 個あり、その全部が 2000 Tick ぶん繰り返される。
+The endpoint `/api/game/{id}/replay/{chunk}` returns **full state snapshots per tick, not deltas**.
+A 100x100 Arena contains over 330 structures alone, all repeated for 2,000 ticks.
 
-実測（`XTTCQ7DA4T`, 2000 Tick）:
+Actual measurements (`XTTCQ7DA4T`, 2000 ticks):
 
-| | サイズ |
+| | Size |
 | --- | --- |
-| API が返す生 JSON | **285.2 MB** |
-| 正規化（差分化）後 | **0.50 MB** |
-| gzip 後 | **0.03 MB** |
+| Raw API JSON | **285.2 MB** |
+| Normalized (deltas) | **0.50 MB** |
+| Gzip compressed | **0.03 MB** |
 
-盤面のほとんどは試合中ずっと動かない。動かない属性を初出時に 1 回だけ持ち、
-変わったものだけを Tick ごとに記録すれば、それだけで 2 桁縮む。
+Most of the board remains static during a game. By storing static properties only once upon introduction and recording only modifications per tick, file sizes shrink by over two orders of magnitude.
 
-変換は**可逆**である。全 2001 Tick・696,435 エンティティを生スナップショットと
-突き合わせて差異が無いことを確認しており、その検証は `test/normalize.test.js` に入っている。
+The conversion is **lossless**. All 2001 ticks and 696,435 entities have been verified against raw snapshots with zero differences (tested in `test/normalize.test.js`).
 
-形式の詳細は [`docs/FORMAT.md`](docs/FORMAT.md)。
+For format details, see [`docs/FORMAT.md`](docs/FORMAT.md).
 
 ---
 
-## 仕組み
+## How It Works
 
-Arena のゲーム API は Steam 認証セッションを見ており、外部から直接叩くと `401` で弾かれる。
-一方、いま自分の PC で動いているクライアントはその認証を持っている。
+The Screeps Arena game API validates Steam authentication sessions and rejects direct external requests with `401 Unauthorized`.
+However, your running desktop client already holds a valid authenticated session:
 
 ```mermaid
 sequenceDiagram
@@ -110,40 +107,38 @@ sequenceDiagram
     participant App as Screeps: Arena (Electron)
     participant API as arena.screeps.com/api
 
-    CLI->>App: SIGUSR1 (Node.js インスペクタを開かせる)
+    CLI->>App: SIGUSR1 (Opens Node.js inspector)
     CLI->>App: open screeps-arena:/game/{shortId}
-    CLI->>App: CDP 接続 (ws://127.0.0.1:9229)
+    CLI->>App: CDP connection (ws://127.0.0.1:9229)
     CLI->>App: webContents.executeJavaScript(fetch(...))
-    App->>API: GET /api/game/{shortId}       (認証済み)
-    API-->>App: 本物の game._id と総 Tick 数
-    loop チャンクごと
+    App->>API: GET /api/game/{shortId}       (Authenticated)
+    API-->>App: Real game._id and total tick count
+    loop Per chunk
         App->>API: GET /api/game/{_id}/replay/{chunk}
         App->>API: GET /api/game/{_id}/log/{chunk}
-        API-->>App: 全 Tick のスナップショットとログ
-        App-->>CLI: チャンクを返す
-        Note over CLI: 受け取るそばから差分へ畳む
+        API-->>App: Full tick snapshots and logs
+        App-->>CLI: Return chunk data
+        Note over CLI: Incrementally compress into deltas
     end
 ```
 
-要点:
+Key points:
 
-- **短縮 ID は 2 段構造。** `/api/game/{shortId}` は本物の MongoDB ObjectId を返すだけの解決用。
-  リプレイ本体は ObjectId を要求し、短縮 ID を渡すと `502` になる。
-- **チャンクは受け取るそばから畳む。** 全部集めてから変換すると 280MB を一度に抱えることになる。
-- **取得できるのは自分が見られる試合だけ。** 権限の壁を越えるものではない。
+- **Short IDs use a two-step resolution.** `/api/game/{shortId}` resolves the short ID to a MongoDB ObjectId. The replay API requires this ObjectId; passing the short ID directly results in `502 Bad Gateway`.
+- **Chunks are compressed as they arrive.** Collecting all chunks before processing would require buffering ~280MB of raw data in memory.
+- **You can only fetch matches accessible to your account.** This does not bypass permissions.
 
 ---
 
-## ボットの内部状態を重ねる（プラグイン）
+## Overlaying Bot Internal State (Plugins)
 
-本体が描くのは **誰の試合でも読み取れる情報だけ**。
-役割分担や作戦モードのような、自分のボットにしか無い概念は扱わない。
+The viewer renders **only universal game information accessible in any match**.
+It deliberately excludes bot-specific concepts like custom squad roles or tactical evaluation scores.
 
-それらは **コンソールログをメタ情報の運搬路にして**足す。ボット側は `console.log` するだけでよく、
-リプレイ形式にもフェッチャにも、ビューア本体にも手を入れない。**fork も要らない。**
+Instead, internal state is transferred **via the console log as a metadata transport**. Your bot only needs to use `console.log`; no modifications are needed to the replay format, fetcher, or viewer core. **No forks required.**
 
 ```js
-// ボット側
+// Bot side
 console.log(`@zones ${JSON.stringify({ 0: [3, 2, 1] })}`);
 console.log(`@creepZone ${JSON.stringify({ "335": 0, "340": 2 })}`);
 ```
@@ -152,19 +147,19 @@ console.log(`@creepZone ${JSON.stringify({ "335": 0, "340": 2 })}`);
 arena-tools view --plugins ~/my-bot/arena-plugins
 ```
 
-`@zones` を含まないログ（他人の試合）では、そのプラグインは自動的に寝る。
-書き方は [`docs/PLUGINS.md`](docs/PLUGINS.md)、動く例は [`examples/plugins/macro-zones.js`](examples/plugins/macro-zones.js)。
+For logs without `@zones` (e.g. opponents' or other players' games), the plugin automatically sleeps.
+See [`docs/PLUGINS.md`](docs/PLUGINS.md) for the guide and [`examples/plugins/macro-zones.js`](examples/plugins/macro-zones.js) for a working example.
 
 ---
 
-## ライブラリとして使う
+## Library Usage
 
 ```js
 import { normalizeMatch, buildTimeline, stateAt } from "screeps-arena-tools";
 
 const doc = normalizeMatch(JSON.parse(raw));
 const timeline = buildTimeline(doc);
-const state = stateAt(timeline, 600);   // Tick 600 の盤面
+const state = stateAt(timeline, 600);   // Board state at tick 600
 
 for (const creep of state.creeps.values()) {
     console.log(creep.id, creep.x, creep.y, creep.hits, creep.body);
@@ -173,24 +168,23 @@ for (const creep of state.creeps.values()) {
 
 ---
 
-## 開発
+## Development
 
 ```bash
-npm test          # node --test（実試合をフィクスチャに使う）
-npm run typecheck # JSDoc 型注釈を tsc で確認
+npm test          # node --test (uses real match fixtures)
+npm run typecheck # Check JSDoc type annotations via tsc
 ```
 
-`src/` の JS はブラウザからもそのまま読まれる。
-変換ロジックを Node 側とビューア側で二重に持たないため、ビルド工程を置いていない。
+JavaScript files in `src/` are imported directly by both Node.js and the browser viewer. There is no build step so logic is never duplicated.
 
 ---
 
-## 注意
+## Notes
 
-- 取得したリプレイには対戦相手のユーザ名が入る。公開する前に確認すること。
-- `SIGUSR1` はデバッガを開かせる。作業が終わったらアプリを再起動しておくと行儀がよい。
-- API の仕様が変われば壊れる。仕様は公開されていない。
+- Fetched replays contain players' usernames. Review before publishing publicly.
+- `SIGUSR1` enables the Node.js debugger on the game process. Restarting the game client after fetching is recommended.
+- The tool relies on internal Electron/API behaviors which may change in future Screeps Arena updates.
 
-## ライセンス
+## License
 
 MIT

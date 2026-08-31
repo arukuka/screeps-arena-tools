@@ -1,9 +1,8 @@
 /**
- * 試合リプレイの取得。
+ * Match replay fetcher.
  *
- * チャンクを 1 つ取っては差分に畳み、生フレームを捨てる。
- * 全部集めてから変換すると、その瞬間だけ生データを丸ごと抱えることになり、
- * 2000 Tick の試合では 280MB を超える（`src/normalize.js` の説明を参照）。
+ * Chunks are fetched incrementally and immediately normalized into deltas,
+ * discarding raw frames to prevent buffering hundreds of MBs in memory.
  */
 
 import { connect, enableInspector, findArenaPid, openMatchInApp, waitForInspector } from "./cdp.js";
@@ -12,14 +11,11 @@ import { matchUrl } from "./arena_url.js";
 
 const API = "https://arena.screeps.com/api";
 
-/** 1 チャンクあたりの Tick 数。クライアント本体がこの粒度で取りに行っている */
+/** Number of ticks per chunk (matching official game client granularity). */
 const CHUNK_SIZE = 100;
 
 /**
- * レンダラー側で 1 回の `fetch` を行う式を組む。
- *
- * 失敗をそのまま例外にすると 1 チャンクのために全体が落ちる。
- * ステータスを値として返し、呼び出し側で扱えるようにする。
+ * Expression evaluated in the renderer process to perform an authenticated fetch.
  */
 const fetchExpr = (url) => `
     (async () => {
@@ -30,9 +26,9 @@ const fetchExpr = (url) => `
 `;
 
 /**
- * 試合を取得して正規化リプレイを返す。
+ * Fetch a match and return a normalized replay document.
  *
- * @param {string} shortId 短縮 ID（`parseMatchRef` で正規化済みのもの）
+ * @param {string} shortId Normalized short ID
  * @param {{ onProgress?: (info: { phase: string, done?: number, total?: number, message?: string }) => void }} [options]
  */
 export async function fetchMatch(shortId, options = {}) {
@@ -40,23 +36,23 @@ export async function fetchMatch(shortId, options = {}) {
 
     if (process.platform !== "darwin") {
         throw new Error(
-            `このフェッチャは macOS 向け（検出: ${process.platform}）。\n` +
-                "  `ps` / `open` / SIGUSR1 に依存している。他 OS では手動で\n" +
-                "  インスペクタを開いて `--ws <url>` を渡すこと。",
+            `This fetcher is designed for macOS (detected: ${process.platform}).\n` +
+                "  Relies on `ps` / `open` / SIGUSR1. On other OSes, open the\n" +
+                "  inspector manually and pass `--ws <url>`.",
         );
     }
 
     const pid = findArenaPid();
     if (pid === null) {
         throw new Error(
-            "Screeps: Arena が起動していない。\n" +
-                "  Steam から起動し、ログイン済みの状態にしてから再実行すること。",
+            "Screeps: Arena is not running.\n" +
+                "  Start from Steam, log in, and retry.",
         );
     }
     report({ phase: "found-app", message: `PID ${pid}` });
 
     enableInspector(pid);
-    // 対象の試合を開かせておく。レンダラーが確実に認証済みの画面を持つ
+    // Open the target match to ensure the renderer has loaded authenticated context
     openMatchInApp(shortId);
 
     const wsUrl = await waitForInspector();
@@ -64,19 +60,19 @@ export async function fetchMatch(shortId, options = {}) {
 
     const session = await connect(wsUrl);
     try {
-        // 1. 短縮 ID を本物の ObjectId に解決する。
-        //    リプレイ API は DB の主キーしか受け付けず、短縮 ID を渡すと 502 になる。
+        // 1. Resolve short ID to real MongoDB ObjectId.
+        //    The replay API requires the ObjectId and returns 502 for short IDs.
         const gameData = await session.evaluateInRenderer(fetchExpr(`${API}/game/${shortId}`));
         if (!gameData || gameData.__error) {
             throw new Error(
-                `試合情報を取得できない (${gameData?.status ?? "?"} ${gameData?.statusText ?? ""}).\n` +
-                    `  ${matchUrl(shortId)} が自分のアカウントで見られるか確認すること`,
+                `Cannot fetch match info (${gameData?.status ?? "?"} ${gameData?.statusText ?? ""}).\n` +
+                    `  Verify ${matchUrl(shortId)} is accessible from your account.`,
             );
         }
         const gameId = gameData.game?._id;
         const totalTicks = gameData.game?.meta?.ticks;
         if (typeof gameId !== "string" || typeof totalTicks !== "number") {
-            throw new Error("応答に game._id / meta.ticks が無い（API 仕様が変わった可能性）");
+            throw new Error("Missing game._id or meta.ticks in API response (API format may have changed)");
         }
         report({ phase: "resolved", message: `${gameId} / ${totalTicks} ticks` });
 
@@ -87,8 +83,7 @@ export async function fetchMatch(shortId, options = {}) {
             fetchedAt: new Date().toISOString(),
         });
 
-        // 2. チャンク境界。0 は初期状態だけ、以降は 100 Tick ずつ。
-        //    最後の端数を取りこぼさないよう totalTicks を明示的に足す。
+        // 2. Chunk boundaries: tick 0 is initial state, followed by 100-tick chunks.
         const targets = [0];
         for (let t = CHUNK_SIZE; t < totalTicks; t += CHUNK_SIZE) targets.push(t);
         if (totalTicks > 0 && targets[targets.length - 1] !== totalTicks) targets.push(totalTicks);

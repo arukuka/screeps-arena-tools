@@ -1,19 +1,18 @@
 /**
- * 地形の符号化。
+ * Terrain encoding and decoding utilities.
  *
- * リプレイ API は地形を 1 セル 1 文字の数字列で返す（row-major, 100x100 なら 10000 文字）。
- * そのまま持つと嵩むうえ意味が読めないので、`p`/`w`/`s` の**ランレングス**に畳む。
- * ビューアもこのモジュールを読むので、符号化の定義はここ一箇所に閉じる。
+ * The replay API provides terrain as a digit string in row-major order (e.g. 10,000 chars for 100x100).
+ * We encode it into run-length `p` (plain), `w` (wall), `s` (swamp) segments.
  */
 
-/** API の数字コード → 地形文字。Screeps の TERRAIN_* マスクと同じ並び */
+/** API digit code to terrain character matching Screeps TERRAIN_* masks. */
 export const TERRAIN_CHARS = ["p", "w", "s"];
 
-/** 地形文字 → 描画側が使う添字（0=plain / 1=wall / 2=swamp） */
+/** Terrain character to renderer palette index (0=plain, 1=wall, 2=swamp). */
 export const TERRAIN_INDEX = { p: 0, w: 1, s: 2 };
 
 /**
- * 数字列（`"0102..."`）をランレングス文字列（`"p3w1s2..."`）にする。
+ * Encode a digit string (`"0102..."`) to run-length representation (`"p3w1s2..."`).
  *
  * @param {string} digits
  * @returns {string}
@@ -37,10 +36,9 @@ export function encodeTerrain(digits) {
 }
 
 /**
- * ランレングス文字列を 1 セル 1 要素の `Uint8Array` に戻す。
+ * Decode run-length string into a 1-cell-per-element `Uint8Array`.
  *
- * `width * height` に満たない/超える入力でも、その長さちょうどの配列を返す。
- * 壊れたログで描画ごと落ちるより、欠けたぶんを plain として見せたほうが調べやすい。
+ * Always returns an array of exact length `width * height`, clamping or padding with plain.
  *
  * @param {string} rle
  * @param {number} width

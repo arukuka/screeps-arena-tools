@@ -1,56 +1,54 @@
 /**
- * コンソールログに載せたメタ情報の取り出し。
+ * Extraction of metadata embedded in console logs.
  *
  * ------------------------------------------------------------------
- * なぜログに載せるのか
+ * Why embed metadata in logs?
  * ------------------------------------------------------------------
- * このキットは「誰の試合でも同じように見られる」ことを最優先にしている。
- * 一方で、自分のボットだけが知っている内部状態（役割分担・評価値・作戦モードなど）を
- * 一緒に眺めたい、という要求は当然ある。
+ * This tool prioritizes universal viewing for any player's match.
+ * However, developers often want to visualize internal bot state (roles, evaluations, modes).
  *
- * そこを fork で解決すると、本体が更新されるたびに追従が要る。
- * 代わりに **Screeps: Arena が誰にでも返すコンソールログ（`/api/game/{id}/log/{chunk}`）を
- * メタ情報の運搬路として使う**。ボット側は `console.log` するだけでよく、
- * リプレイ形式にもフェッチャにも手を入れない。
+ * Instead of requiring forks, we use Screeps: Arena's standard console log API
+ * (`/api/game/{id}/log/{chunk}`) as a metadata carrier.
+ * Bots only need to use `console.log`; no changes are needed to replay formats or fetchers.
  *
- * ボット側:
+ * Bot side:
  *
  * ```js
  * console.log(`@zones ${JSON.stringify({ 0: [3, 2, 1], 1: [1, 1, 4] })}`);
  * ```
  *
- * ビューア側: `viewer/plugin.js` のプラグインが `tick.e.zones` を読んで描く。
- * 表示スクリプトは外から差し込む（`?plugin=<url>`）。本体の fork は要らない。
+ * Viewer side: `viewer/plugin.js` plugins read `tick.e.zones` and render them.
+ * Plugins can be loaded dynamically (`?plugin=<url>`) without forking the codebase.
  *
  * ------------------------------------------------------------------
- * 書式
+ * Format
  * ------------------------------------------------------------------
- * 行頭が `@` で始まり、続く名前空間と空白で区切られた 1 行がメタ情報。
+ * A metadata line starts with `@` followed by a namespace and whitespace-delimited payload:
  *
  *     `@<namespace> <payload>`
  *
- * - `<namespace>`: `[A-Za-z0-9_.:-]+`。プラグインが自分の取り分を見つける鍵
- * - `<payload>`: JSON として読めれば構造として、読めなければ文字列として保持
+ * - `<namespace>`: `[A-Za-z0-9_.:-]+`. Key used by plugins to locate their data
+ * - `<payload>`: Parsed as JSON if valid; stored as a raw string otherwise
  *
- * 同じ Tick に同じ名前空間が複数回出てもよい。**値はつねに配列**で持つ
- * （1 回だけのときも要素 1 の配列）。読む側で場合分けが要らないほうが事故が少ない。
+ * Multiple lines for the same namespace in a single tick are preserved as an array.
+ * Values are always stored as arrays (even single occurrences) for consistent consumption.
  */
 
-/** メタ情報行の形。行頭の `@` と名前空間を取る */
+/** Metadata line regex pattern capturing leading `@` and namespace. */
 const META_LINE_RE = /^@([A-Za-z0-9_.:-]+)(?:\s+([\s\S]*))?$/;
 
 /**
- * 1 Tick 分のコンソールログを「人が読む本文」と「メタ情報」に分ける。
+ * Split a single tick's console log into human-readable text and metadata.
  *
- * メタ情報行は本文から取り除く。毎 Tick メタ情報を吐くボットだと、
- * 残したままではログ欄が埋まって本来のデバッグ出力が読めなくなるため。
+ * Metadata lines are removed from the plain log text so high-frequency
+ * telemetry does not flood the human-readable log viewer.
  *
- * @param {string} text 1 Tick 分のコンソール出力（改行区切り）
+ * @param {string} text Console output for 1 tick (newline separated)
  * @returns {{ log: string, ext: Record<string, unknown[]> | null }}
  */
 export function splitLogLine(text) {
     if (typeof text !== "string" || text === "") return { log: "", ext: null };
-    // メタ情報を使わないログでは走査だけ無駄になるので、`@` が無ければ即返す
+    // Fast return if no metadata indicator exists
     if (!text.includes("@")) return { log: text, ext: null };
 
     const plain = [];
@@ -73,15 +71,13 @@ export function splitLogLine(text) {
 }
 
 /**
- * ペイロードを JSON として読む。読めなければ文字列のまま返す。
- *
- * `@mode swarm` のような素朴な書き方も通したいので、失敗を例外にしない。
+ * Parse payload as JSON if possible; otherwise return as raw string.
  *
  * @param {string | undefined} raw
  * @returns {unknown}
  */
 function parsePayload(raw) {
-    if (raw === undefined) return true; // `@flagCaptured` のような値なしの印
+    if (raw === undefined) return true; // Flag marker without payload (e.g. `@flagCaptured`)
     const text = raw.trim();
     if (text === "") return true;
     try {
@@ -92,9 +88,9 @@ function parsePayload(raw) {
 }
 
 /**
- * Tick ごとのメタ情報から「どの名前空間が、どの範囲に出たか」の索引を作る。
+ * Index metadata across all ticks to summarize active namespaces and tick ranges.
  *
- * ビューアが「このログにはこのプラグインが使える」と判断するのに使う。
+ * Used by the viewer to determine which plugins can activate for a match.
  *
  * @param {ReadonlyArray<{ k: number, e?: Record<string, unknown[]> }>} ticks
  * @returns {Record<string, { count: number, firstTick: number, lastTick: number }>}

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * `arena-tools` のコマンド入口。
+ * `arena-tools` command line interface entry point.
  *
  *   arena-tools fetch   <url|shortId> [-o <file>]
  *   arena-tools convert <raw.json>    [-o <file>]
@@ -24,22 +24,22 @@ const USAGE = `
 Screeps: Arena Tools
 
   arena-tools fetch <url|shortId> [-o <file>]
-      起動中の Screeps: Arena 経由で試合を取得し、正規化して保存する。
-      URL をそのまま貼ってよい:
+      Fetch match via running Screeps: Arena, normalize and save.
+      URLs can be passed directly:
         arena-tools fetch https://arena.screeps.com/game/XTTCQ7DA4T
         arena-tools fetch XTTCQ7DA4T
 
   arena-tools convert <raw.json> [-o <file>] [--short-id <id>]
-      すでに手元にある生の取得結果を正規化する。
+      Normalize raw JSON data already saved locally.
 
   arena-tools view [--port <n>] [--replays <dir>] [--plugins <dir>]
-      ビューアを立ち上げる（既定 http://localhost:${DEFAULT_PORT}/）。
+      Start the replay viewer (default http://localhost:${DEFAULT_PORT}/).
 
   arena-tools info <replay.json.gz>
-      保存済みリプレイの要約を表示する。
+      Display summary of a normalized replay file.
 `.trim();
 
-/** `-o x` / `--out x` / `--out=x` を素直に拾うだけの引数分解 */
+/** Simple argument parser extracting positional values and flags (-o, --out, etc.). */
 function parseArgs(argv) {
     const positional = [];
     const flags = {};
@@ -69,17 +69,16 @@ function parseArgs(argv) {
 const outOf = (flags) => flags.o ?? flags.out ?? null;
 
 async function cmdFetch(positional, flags) {
-    if (positional.length === 0) throw new Error("試合の URL か短縮 ID を渡すこと");
+    if (positional.length === 0) throw new Error("Pass a match URL or short ID");
     const shortId = parseMatchRef(positional[0]);
 
     console.log(`=== Screeps: Arena Tools ===`);
-    console.log(`試合: ${matchUrl(shortId)}`);
+    console.log(`Match: ${matchUrl(shortId)}`);
 
     const doc = await fetchMatch(shortId, {
         onProgress: (info) => {
             if (info.phase === "chunk") {
-                // 同じ行を上書きして進捗を出す。端末でなければ落ち着いて 1 行ずつ
-                const line = `  取得中 ${info.done}/${info.total} (${info.message})`;
+                const line = `  fetching ${info.done}/${info.total} (${info.message})`;
                 if (process.stdout.isTTY) process.stdout.write(`\r${line}   `);
                 else if (info.done === info.total) console.log(line);
             } else {
@@ -93,19 +92,19 @@ async function cmdFetch(positional, flags) {
     mkdirSync(dirname(out), { recursive: true });
     const bytes = writeReplay(out, doc);
 
-    console.log(`\n保存: ${out} (${(bytes / 1024).toFixed(1)} KB)`);
+    console.log(`\nSaved: ${out} (${(bytes / 1024).toFixed(1)} KB)`);
     console.log(`  ${describeReplay(doc)}`);
     reportExtensions(doc);
-    console.log(`\n  見るには: arena-tools view`);
+    console.log(`\n  To view: arena-tools view`);
 }
 
 function cmdConvert(positional, flags) {
-    if (positional.length === 0) throw new Error("生の取得結果 JSON を渡すこと");
+    if (positional.length === 0) throw new Error("Pass a raw JSON file to convert");
     const input = resolve(process.cwd(), positional[0]);
     const raw = readReplay(input);
 
     if (isReplayDoc(raw)) {
-        console.log("すでに正規化済み。変換不要");
+        console.log("Already normalized. No conversion needed.");
         console.log(`  ${describeReplay(raw)}`);
         return;
     }
@@ -117,7 +116,7 @@ function cmdConvert(positional, flags) {
     mkdirSync(dirname(out), { recursive: true });
     const bytes = writeReplay(out, doc);
 
-    console.log(`保存: ${out} (${(bytes / 1024).toFixed(1)} KB)`);
+    console.log(`Saved: ${out} (${(bytes / 1024).toFixed(1)} KB)`);
     console.log(`  ${describeReplay(doc)}`);
     reportExtensions(doc);
 }
@@ -131,37 +130,37 @@ function cmdView(flags) {
     serve(opts);
     const found = listReplays(opts.replayDir);
     console.log("==================================================");
-    console.log(`ビューア: http://localhost:${opts.port}/`);
-    console.log(`  リプレイ: ${opts.replayDir} (${found.length} 件)`);
-    console.log(`  プラグイン: ${opts.pluginDir ?? "(なし)"}`);
-    if (found.length === 0) console.log("  まだ何も無い。`arena-tools fetch <url>` で取ってくること");
-    console.log("  Ctrl+C で停止");
+    console.log(`Viewer: http://localhost:${opts.port}/`);
+    console.log(`  Replays: ${opts.replayDir} (${found.length} items)`);
+    console.log(`  Plugins: ${opts.pluginDir ?? "(none)"}`);
+    if (found.length === 0) console.log("  No replays found. Fetch one using: arena-tools fetch <url>");
+    console.log("  Press Ctrl+C to stop");
     console.log("==================================================");
 }
 
 function cmdInfo(positional) {
-    if (positional.length === 0) throw new Error("リプレイファイルを渡すこと");
+    if (positional.length === 0) throw new Error("Pass a replay file");
     const doc = readReplay(resolve(process.cwd(), positional[0]));
-    if (!isReplayDoc(doc)) throw new Error("正規化リプレイではない（`convert` を先に通すこと）");
+    if (!isReplayDoc(doc)) throw new Error("Not a normalized replay (run `convert` first)");
     console.log(describeReplay(doc));
-    console.log(`  URL      : ${doc.meta.url ?? "-"}`);
-    console.log(`  game id  : ${doc.meta.gameId ?? "-"}`);
-    console.log(`  作成      : ${doc.meta.createdAt ?? "-"}`);
-    console.log(`  盤面      : ${doc.meta.width}x${doc.meta.height}`);
-    console.log(`  オブジェクト: ${doc.objects.length}`);
-    console.log(`  Tick      : ${doc.ticks.length}`);
-    console.log(`  ログ行     : ${Object.keys(doc.logs).length} tick`);
+    console.log(`  URL        : ${doc.meta.url ?? "-"}`);
+    console.log(`  game id    : ${doc.meta.gameId ?? "-"}`);
+    console.log(`  Created    : ${doc.meta.createdAt ?? "-"}`);
+    console.log(`  Board      : ${doc.meta.width}x${doc.meta.height}`);
+    console.log(`  Objects    : ${doc.objects.length}`);
+    console.log(`  Ticks      : ${doc.ticks.length}`);
+    console.log(`  Log ticks  : ${Object.keys(doc.logs).length}`);
     reportExtensions(doc);
 }
 
-/** ログから拾ったメタ情報の名前空間を知らせる。プラグインを当てる手がかりになる */
+/** Report metadata namespaces extracted from console logs. */
 function reportExtensions(doc) {
     const names = Object.keys(doc.extensions ?? {});
     if (names.length === 0) return;
-    console.log("  メタ情報:");
+    console.log("  Extensions:");
     for (const ns of names) {
         const e = doc.extensions[ns];
-        console.log(`    @${ns} — ${e.count} 件 (tick ${e.firstTick}..${e.lastTick})`);
+        console.log(`    @${ns} — ${e.count} entries (ticks ${e.firstTick}..${e.lastTick})`);
     }
 }
 
@@ -189,13 +188,13 @@ async function main() {
             console.log(USAGE);
             break;
         default:
-            console.error(`不明なコマンド: ${command}\n`);
+            console.error(`Unknown command: ${command}\n`);
             console.error(USAGE);
             process.exit(1);
     }
 }
 
 main().catch((err) => {
-    console.error(`\nエラー: ${err.message}`);
+    console.error(`\nError: ${err.message}`);
     process.exit(1);
 });

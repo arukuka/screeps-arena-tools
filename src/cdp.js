@@ -1,16 +1,15 @@
 /**
- * 起動中の Screeps: Arena（Electron）に繋ぐための最小限の CDP クライアント。
+ * Minimal CDP (Chrome DevTools Protocol) client to connect to running Screeps: Arena (Electron).
  *
- * Arena のゲーム API は Steam 認証セッションを見ており、外部から直接叩くと
- * 401 で弾かれる。一方、いま自分の PC で動いているアプリはその認証を持っている。
- * そこで
+ * The Arena game API validates Steam auth sessions and returns 401 on direct external requests.
+ * However, the local running game client already holds valid authentication credentials.
+ * Therefore, we:
  *
- *   1. `SIGUSR1` で Node.js インスペクタ（:9229）を開かせ
- *   2. CDP でメインプロセスに繋ぎ
- *   3. レンダラーの認証済みコンテキストで `fetch()` を実行する
+ *   1. Send `SIGUSR1` to open the Node.js inspector (:9229)
+ *   2. Connect via CDP to the main process
+ *   3. Execute `fetch()` in the renderer's authenticated context
  *
- * という順で、自分のアカウントで見られる試合を自分で取り出す。
- * 認証を偽造してはおらず、閲覧権限のある試合しか取得できない。
+ * This allows fetching matches accessible to your account without forging credentials.
  */
 
 import { execFileSync } from "node:child_process";
@@ -20,10 +19,9 @@ const INSPECTOR_PORT = 9229;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /**
- * 動いている Arena のメインプロセス PID を探す。
+ * Locate the PID of the running Arena main process.
  *
- * `Helper` を除くのは、Electron が張るレンダラー/GPU の子プロセスを
- * 掴んでしまうとシグナルの宛先が変わるため。
+ * Excludes `Helper` to avoid targeting Electron renderer/GPU child processes.
  *
  * @returns {string | null}
  */
@@ -41,7 +39,7 @@ export function findArenaPid() {
     }
 }
 
-/** インスペクタを開かせる。すでに開いていれば無害 */
+/** Open inspector port via SIGUSR1. Safe to call if already enabled. */
 export function enableInspector(pid) {
     try {
         process.kill(Number(pid), "SIGUSR1");
@@ -51,7 +49,7 @@ export function enableInspector(pid) {
     }
 }
 
-/** アプリに対象の試合を開かせる。レンダラーが認証済みであることの担保でもある */
+/** Open the match in-app to ensure the renderer has loaded the authenticated match context. */
 export function openMatchInApp(shortId) {
     try {
         execFileSync("/usr/bin/open", [`screeps-arena:/game/${shortId}`], { stdio: "ignore" });
@@ -62,9 +60,7 @@ export function openMatchInApp(shortId) {
 }
 
 /**
- * インスペクタの WebSocket URL を待って取る。
- *
- * `SIGUSR1` を受けてから待ち受けが立つまでに間があるので、開くまで数回試す。
+ * Wait for and retrieve the inspector WebSocket URL.
  *
  * @param {{ attempts?: number, delayMs?: number }} [options]
  */
@@ -85,13 +81,13 @@ export async function waitForInspector(options = {}) {
         await sleep(delayMs);
     }
     throw new Error(
-        `インスペクタ (127.0.0.1:${INSPECTOR_PORT}) に繋がらない` +
+        `Cannot connect to inspector (127.0.0.1:${INSPECTOR_PORT})` +
             (lastError ? `: ${lastError.message}` : ""),
     );
 }
 
 /**
- * CDP セッション。`evaluate()` でレンダラー側のコードを走らせる。
+ * CDP session to evaluate expressions in the renderer process.
  *
  * @param {string} wsUrl
  */
@@ -111,7 +107,7 @@ export async function connect(wsUrl) {
 
     await new Promise((resolve, reject) => {
         ws.onopen = resolve;
-        ws.onerror = () => reject(new Error(`WebSocket に接続できない: ${wsUrl}`));
+        ws.onerror = () => reject(new Error(`Cannot connect to WebSocket: ${wsUrl}`));
     });
 
     const send = (method, params = {}) =>
@@ -125,11 +121,7 @@ export async function connect(wsUrl) {
 
     return {
         /**
-         * レンダラーの認証済みコンテキストで式を評価する。
-         *
-         * メインプロセスからは `BrowserWindow` 越しにしかレンダラーへ届かないので、
-         * 二段の `executeJavaScript` を挟む。`expression` は
-         * **レンダラー側で評価される式の文字列**（Promise を返してよい）。
+         * Evaluate an expression within the authenticated renderer context.
          *
          * @param {string} expression
          */
@@ -142,7 +134,7 @@ export async function connect(wsUrl) {
                     const req = Module.createRequire(process.cwd() + '/');
                     const { BrowserWindow } = req('electron');
                     const wins = BrowserWindow.getAllWindows();
-                    if (wins.length === 0) throw new Error('Arena のウィンドウが見つからない');
+                    if (wins.length === 0) throw new Error('Arena window not found');
                     return await wins[0].webContents.executeJavaScript(${JSON.stringify(expression)});
                 })()
             `;
@@ -156,7 +148,7 @@ export async function connect(wsUrl) {
                     result.exceptionDetails.exception?.description ??
                     result.exceptionDetails.text ??
                     "unknown error";
-                throw new Error(`レンダラーでの評価に失敗: ${text}`);
+                throw new Error(`Renderer evaluation failed: ${text}`);
             }
             return result.result?.value;
         },

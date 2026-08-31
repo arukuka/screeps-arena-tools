@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ja">
+<html lang="en">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -10,24 +10,24 @@
 <div id="app">
     <header class="topbar">
         <h1>Arena Replay</h1>
-        <div class="topbar-meta" id="match-title">リプレイ未選択</div>
+        <div class="topbar-meta" id="match-title">No replay selected</div>
         <div class="topbar-actions">
             <label class="file-button">
-                ファイルを開く
+                Open File
                 <input type="file" id="file-input" accept=".json,.gz" hidden />
             </label>
-            <button id="reload-replays" type="button" title="リプレイ置き場を読み直す">再スキャン</button>
+            <button id="reload-replays" type="button" title="Rescan replay directory">Rescan</button>
         </div>
     </header>
 
     <aside class="sidebar" id="sidebar">
-        <div class="sidebar-head">リプレイ</div>
+        <div class="sidebar-head">Replays</div>
         <div id="replay-list" class="replay-list">
-            <p class="hint">読み込み中…</p>
+            <p class="hint">Loading…</p>
         </div>
-        <div class="sidebar-head">プラグイン</div>
+        <div class="sidebar-head">Plugins</div>
         <div id="plugin-list" class="plugin-list">
-            <p class="hint">なし</p>
+            <p class="hint">None</p>
         </div>
     </aside>
 
@@ -36,62 +36,62 @@
             <canvas id="board"></canvas>
             <div class="tooltip" id="tooltip" hidden></div>
             <div class="board-controls">
-                <button id="btn-zoom-in" type="button" title="拡大 (ホイール上 / +)">＋</button>
-                <button id="btn-zoom-reset" type="button" title="ズームを 100% に戻す">100%</button>
-                <button id="btn-zoom-out" type="button" title="縮小 (ホイール下 / -)">−</button>
-                <button id="btn-board-reset" type="button" title="中央配置・ズームリセット (ダブルクリック / 0 / R)">🎯</button>
+                <button id="btn-zoom-in" type="button" title="Zoom In (Wheel Up / +)">＋</button>
+                <button id="btn-zoom-reset" type="button" title="Reset Zoom to 100%">100%</button>
+                <button id="btn-zoom-out" type="button" title="Zoom Out (Wheel Down / -)">−</button>
+                <button id="btn-board-reset" type="button" title="Center & Reset Zoom (Double Click / 0 / R)">🎯</button>
             </div>
             <div class="board-empty" id="board-empty">
-                <p>左の一覧から選ぶ、またはここに <code>.replay.json.gz</code> をドロップ</p>
-                <p class="hint"><code>arena-tools fetch &lt;URL&gt;</code> でリプレイを取ってくる</p>
+                <p>Select from list or drop a <code>.replay.json.gz</code> file here</p>
+                <p class="hint">Fetch a replay using <code>arena-tools fetch &lt;URL&gt;</code></p>
             </div>
         </div>
     </main>
 
     <aside class="inspector" id="inspector">
         <section class="panel">
-            <h2>試合</h2>
+            <h2>Match</h2>
             <dl id="match-info" class="kv"></dl>
         </section>
         <section class="panel">
-            <h2>陣営</h2>
+            <h2>Sides</h2>
             <div id="side-stats"></div>
         </section>
         <section class="panel">
-            <h2>選択中のユニット</h2>
-            <div id="unit-detail" class="hint">盤面のユニットをクリック</div>
+            <h2>Selected Unit</h2>
+            <div id="unit-detail" class="hint">Click a unit on the board</div>
         </section>
         <section class="panel">
-            <h2>この Tick の行動</h2>
-            <div id="action-list" class="action-list hint">なし</div>
+            <h2>Actions This Tick</h2>
+            <div id="action-list" class="action-list hint">None</div>
         </section>
         <section class="panel" id="log-panel">
-            <h2>コンソールログ</h2>
-            <pre id="console-log" class="console-log hint">なし</pre>
+            <h2>Console Log</h2>
+            <pre id="console-log" class="console-log hint">None</pre>
         </section>
-        <!-- プラグインのパネルはここに差し込まれる -->
+        <!-- Plugin panels inserted here -->
         <div id="plugin-panels"></div>
         <section class="panel">
-            <h2>凡例</h2>
+            <h2>Legend</h2>
             <div class="legend" id="legend"></div>
-            <p class="hint">円 = creep、外周の弧が残 HP、中心の点が主戦力パーツ。
-                薄い円は spawning 中。四角が Spawn / Extension、菱形が Flag。</p>
-            <p class="hint">Space 再生 / ← → 1 Tick / Shift+← → 10 Tick</p>
-            <p class="hint">盤面: ドラッグで移動 / ホイールでズーム / ダブルクリックで初期位置</p>
+            <p class="hint">Circles = creeps, outer arc = remaining HP, center dot = main combat part.
+                Faded circles = spawning. Squares = Spawn / Extension, diamonds = Flag.</p>
+            <p class="hint">Space: Play/Pause | ← / →: 1 Tick | Shift + ← / →: 10 Ticks</p>
+            <p class="hint">Board: Drag to pan | Scroll to zoom | Double click to reset</p>
         </section>
     </aside>
 
     <footer class="transport">
         <div class="controls">
-            <button id="btn-first" type="button" title="先頭へ">⏮</button>
-            <button id="btn-back10" type="button" title="10 Tick 戻る">-10</button>
-            <button id="btn-back1" type="button" title="1 Tick 戻る">-1</button>
-            <button id="btn-play" type="button" class="primary" title="再生 / 一時停止">▶</button>
-            <button id="btn-fwd1" type="button" title="1 Tick 進む">+1</button>
-            <button id="btn-fwd10" type="button" title="10 Tick 進む">+10</button>
-            <button id="btn-last" type="button" title="末尾へ">⏭</button>
+            <button id="btn-first" type="button" title="First">⏮</button>
+            <button id="btn-back10" type="button" title="-10 Ticks">-10</button>
+            <button id="btn-back1" type="button" title="-1 Tick">-1</button>
+            <button id="btn-play" type="button" class="primary" title="Play / Pause">▶</button>
+            <button id="btn-fwd1" type="button" title="+1 Tick">+1</button>
+            <button id="btn-fwd10" type="button" title="+10 Ticks">+10</button>
+            <button id="btn-last" type="button" title="Last">⏭</button>
             <label class="speed">
-                速度
+                Speed
                 <select id="speed">
                     <option value="0.5">0.5x</option>
                     <option value="1">1x</option>
@@ -101,9 +101,9 @@
                     <option value="30">30x</option>
                 </select>
             </label>
-            <label class="toggle"><input type="checkbox" id="show-actions" checked /> 行動</label>
-            <label class="toggle"><input type="checkbox" id="show-structures" checked /> 構造物</label>
-            <!-- プラグインのトグルはここに差し込まれる -->
+            <label class="toggle"><input type="checkbox" id="show-actions" checked /> Actions</label>
+            <label class="toggle"><input type="checkbox" id="show-structures" checked /> Structures</label>
+            <!-- Plugin toggles inserted here -->
             <span id="plugin-toggles" class="plugin-toggles"></span>
             <span class="tick-readout" id="tick-readout">-</span>
         </div>

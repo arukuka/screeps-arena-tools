@@ -1,90 +1,87 @@
-# プラグイン
+# Plugins
 
-ビューア本体が描くのは **誰の試合でも読み取れる情報だけ**（地形・構造物・creep・行動・エネルギー・flag）。
-役割分担や作戦モードのような、自分のボットにしか無い概念は本体に入れない。
+The core viewer renders **only universal game information present in any match** (terrain, structures, creeps, actions, energy, and flags).
+It deliberately avoids built-in UI for bot-specific logic such as squad assignments, strategy states, or tactical evaluations.
 
-理由は 2 つ。他人の試合を開いたときに無意味な UI が並ぶこと。そして
-入れた人が **fork の維持に縛られる**こと。
+This design avoids cluttering UI when viewing matches between other players and prevents developers from being trapped in maintenance loops maintaining forks.
 
-代わりに、内部状態は次の経路を通る。
+Instead, custom internal state flows through this pipeline:
 
 ```
-ボットの console.log("@zones {...}")
-        ↓  Screeps: Arena が誰にでも返すコンソールログ API
-   fetch / convert が tick.e.zones へ載せる
+Bot executes console.log("@zones {...}")
+        ↓  Screeps: Arena standard console log API
+   fetch / convert places data into tick.e.zones
         ↓
-   外部ファイルとして置いたプラグインが描く
+   Standalone plugin files render custom visuals and panels
 ```
 
-**リプレイ形式にもフェッチャにもビューア本体にも手を入れない。**
+**No changes are required to the replay format, fetcher, or core viewer.**
 
 ---
 
-## 1. ボット側 — メタ情報を吐く
+## 1. Bot Side — Emitting Metadata
 
-行頭が `@` で始まる 1 行がメタ情報として扱われる。
+Lines starting with `@` are treated as metadata lines:
 
 ```
-@<名前空間> <ペイロード>
+@<namespace> <payload>
 ```
 
 ```js
-// 陣営ごとのゾーン配分
+// Team zone distribution
 console.log(`@zones ${JSON.stringify({ 0: [3, 2, 1], 1: [1, 1, 4] })}`);
 
-// creep がどのゾーンを担当しているか
+// Creep zone assignment
 console.log(`@creepZone ${JSON.stringify({ "335": 0, "340": 2 })}`);
 
-// JSON でなくてもよい
+// Non-JSON string payloads are supported
 console.log("@mode swarm");
 
-// 値なしの印
+// Marker flags without values
 console.log("@flagCaptured");
 ```
 
-| | |
+| Field | Description |
 | --- | --- |
-| 名前空間 | `[A-Za-z0-9_.:-]+`。プラグインが自分の取り分を見つける鍵 |
-| ペイロード | JSON として読めれば構造として、読めなければ文字列として保持 |
-| 値なし | `true` になる |
+| Namespace | `[A-Za-z0-9_.:-]+`. Key used by plugins to locate their data |
+| Payload | Parsed as JSON if valid; stored as a raw string otherwise |
+| No value | Evaluates to `true` |
 
-**値はつねに配列で入る。** 同じ Tick に同じ名前空間を複数回出せるため、
-1 回だけのときも要素 1 の配列になる。読む側で場合分けが要らないほうが事故が少ない。
+**Values are always stored in arrays.** Because multiple lines with the same namespace can occur in a single tick, values are normalized into an array (even for single occurrences) to simplify consumer code.
 
 ```jsonc
 // tick.e
 { "zones": [ { "0": [3,2,1], "1": [1,1,4] } ], "mode": ["swarm"] }
 ```
 
-メタ情報行は**人が読むログ本文からは取り除かれる**。毎 Tick 吐いてもログ欄が埋まらない。
+Metadata lines are **automatically stripped from human-readable console logs**, ensuring telemetry does not obscure standard debug logs.
 
-行中に現れた `@`（`foo@example.com` など）はメタ情報にならない。行頭だけを見る。
+Characters like `@` inside sentences (e.g. `foo@example.com`) are ignored; only leading `@` tokens are processed.
 
-### 出す頻度
+### Emission Frequency
 
-毎 Tick 出す必要はない。決め直した Tick だけ出して、プラグイン側で遡って探すのが安い
-（`examples/plugins/macro-zones.js` の `lookback` を参照）。
+Emitting metadata every tick is unnecessary. Emitting updates only on decision changes and letting plugins look backward is significantly more efficient (see `lookback` in [`examples/plugins/macro-zones.js`](../examples/plugins/macro-zones.js)).
 
 ---
 
-## 2. プラグイン側 — 描く
+## 2. Plugin Side — Rendering
 
-ES モジュールで、既定エクスポートにオブジェクトを置く。**すべての項目が任意**。
+Plugins are ES modules exporting a default configuration object. **All properties are optional.**
 
 ```js
 export default {
     name: "macro-zones",
 
-    // 必要な名前空間。ログに 1 つも無ければ本体が自動的にこのプラグインを寝かせる
+    // Required namespaces. If none exist in the log, the plugin is automatically disabled
     requires: ["zones", "creepZone"],
 
-    // 下部のバーに出る表示切り替え
-    toggles: [{ id: "macro-zones", label: "ゾーン", default: true }],
+    // Toggle controls added to the bottom transport bar
+    toggles: [{ id: "macro-zones", label: "Zones", default: true }],
 
-    // 凡例に足す項目
+    // Legend entries
     legend: [{ color: "#8ee0ff", label: "DEFENSE" }],
 
-    // 盤面へ重ねて描く。本体の描画の後に呼ばれる
+    // Canvas overlay on the game board (called after core rendering)
     drawOverlay(api) {
         if (!api.isToggled("macro-zones")) return;
         const { ctx, cell } = api;
@@ -96,11 +93,11 @@ export default {
         }
     },
 
-    // 右サイドに足すパネル
+    // Custom inspector panels added to the right sidebar
     panels: [
         {
             id: "macro-zones",
-            title: "Macro ゾーン配分",
+            title: "Macro Zone Allocation",
             render(el, api) {
                 el.textContent = JSON.stringify(api.ext?.zones ?? null);
             },
@@ -109,36 +106,35 @@ export default {
 };
 ```
 
-### `api`
+### `api` Context Object
 
-`drawOverlay` と `panels[].render` に渡る取っ手。
+Passed to `drawOverlay` and `panels[].render`:
 
-| | |
+| Property | Description |
 | --- | --- |
-| `ctx` | 盤面の `CanvasRenderingContext2D` |
-| `cell` | 1 セルあたりのピクセル数 |
-| `doc` | リプレイ本体（`meta` / `objects` / `logs` など） |
-| `timeline` | `objectById` などを持つ |
-| `state` | いまの Tick の盤面。`creeps` / `struct` / `owner` / `actions` |
-| `tick` / `index` | Tick 番号 / `doc.ticks` 上の添字 |
-| `ext` | いまの Tick のメタ情報。無ければ `null` |
-| `extAt(k)` | 任意の Tick のメタ情報。索引済みなので遡っても安い |
-| `selected` | 選択中の creep id |
-| `sideColor(side)` / `fade(hex, a)` | 本体と同じ配色を使うための補助 |
-| `isToggled(id)` | 自分のトグルの状態 |
+| `ctx` | Board `CanvasRenderingContext2D` |
+| `cell` | Pixel size per grid cell |
+| `doc` | Replay document (`meta`, `objects`, `logs`, etc.) |
+| `timeline` | Timeline object with `objectById` and keyframes |
+| `state` | Current tick state (`creeps`, `struct`, `owner`, `actions`) |
+| `tick` / `index` | Tick number / index in `doc.ticks` |
+| `ext` | Metadata object for the current tick (or `null`) |
+| `extAt(k)` | Indexed metadata for any tick `k` (fast backward lookups) |
+| `selected` | Currently selected creep ID (or `null`) |
+| `sideColor(side)` / `fade(hex, a)` | Palette helper functions matching core styles |
+| `isToggled(id)` | Current boolean state of a registered toggle |
 
 ---
 
-## 3. 置く
+## 3. Loading Plugins
 
 ```bash
 arena-tools view --plugins ~/my-bot/arena-plugins
 ```
 
-置き場のディレクトリにある `*.js` が自動で読み込まれる。
-自分のボットのリポジトリに置いたままでよく、このキットに取り込む必要はない。
+All `*.js` files in the specified directory are loaded automatically. Plugins can stay in your bot's own repository without copying into `screeps-arena-tools`.
 
-URL からの指定もできる。
+Plugins can also be specified via URL queries:
 
 ```
 http://localhost:5544/?plugin=/plugins/macro-zones.js
@@ -146,19 +142,14 @@ http://localhost:5544/?plugin=/plugins/macro-zones.js
 
 ---
 
-## 決めごと
+## Security & Runtime Isolation
 
-- **同一オリジンのプラグインしか読まない。** 外部 URL を許すと、共有されたリンクを
-  開いただけで任意のスクリプトが走ることになる。自分のプラグインは `--plugins` で配ること。
-- **落ちたプラグインは切り離される。** 1 つの例外で盤面ごと止まると原因が分からなくなるので、
-  例外を出したプラグインだけを無効にして、左の一覧に理由を出す。
-- **`requires` が満たされないプラグインは寝る。** 他人の試合を開いたときに
-  空のパネルが並ばないようにするため。左の一覧には灰色で残り、何が足りないかを表示する。
+- **Same-origin only:** The viewer refuses to load scripts from external origins to prevent cross-site execution when opening shared links. Serve custom plugins with `--plugins`.
+- **Fault isolation:** If a plugin throws an error, it is automatically disabled with an error report in the sidebar without halting playback or crashing other components.
+- **Dependency checks:** If `requires` namespaces are missing in a match, the plugin is disabled silently and displayed as inactive in the sidebar.
 
 ---
 
-## 動く例
+## Example
 
-[`examples/plugins/macro-zones.js`](../examples/plugins/macro-zones.js) —
-Macro のゾーン配分を creep のリングとパネルの棒グラフで描く。
-`@zones` / `@creepZone` を消費し、決め直した Tick だけ出す運用に合わせて遡って探す。
+[`examples/plugins/macro-zones.js`](../examples/plugins/macro-zones.js) — Renders macro zone allocations as creep overlay rings and inspector bar charts using `@zones` and `@creepZone`.

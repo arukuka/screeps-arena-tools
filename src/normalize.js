@@ -1,28 +1,24 @@
 /**
- * 生のリプレイ応答 → 正規化リプレイ（`docs/FORMAT.md` の Replay Document）。
+ * Raw replay response to normalized replay document (`docs/FORMAT.md`).
  *
  * ------------------------------------------------------------------
- * なぜ変換が要るのか
+ * Why convert?
  * ------------------------------------------------------------------
- * `/api/game/{id}/replay/{chunk}` は **毎 Tick の完全なスナップショット**を返す。
- * 差分ではない。100x100 の Arena だと構造物だけで 330 個以上あるので、
- * 2000 Tick の 1 試合が素の JSON で **280MB 超**になる。
- * ブラウザに投げる大きさではないし、`git` に置ける大きさでもない。
+ * `/api/game/{id}/replay/{chunk}` returns full state snapshots per tick rather than deltas.
+ * A 100x100 Arena contains over 330 structures alone, causing a 2,000 tick match to exceed
+ * 280MB of raw JSON.
  *
- * 盤面のほとんどは試合中ずっと動かないので、
+ * By recording:
+ *   1. Static properties (type, coordinates, max HP) once upon appearance
+ *   2. Only modified attributes per tick
  *
- *   1. 動かない属性（種類・座標・最大 HP）は初出時に 1 回だけ
- *   2. 変わったものだけを Tick ごとの差分に
- *
- * と持ち直すだけで 2 桁縮む。ここはその変換だけを行う。
+ * the replay document size shrinks by over two orders of magnitude.
  *
  * ------------------------------------------------------------------
- * 逐次変換であること
+ * Incremental processing
  * ------------------------------------------------------------------
- * 全チャンクを読み終えてから変換すると、その瞬間だけ生データを丸ごと抱える。
- * それが上記の 280MB なので、`createNormalizer()` はチャンクを受け取るたびに
- * 差分へ畳んで生フレームを捨てる形にしてある。
- * フェッチャはチャンクを 1 つ取っては渡す、を繰り返せばよい。
+ * `createNormalizer()` folds raw frames into deltas chunk by chunk as they arrive,
+ * discarding raw snapshots immediately to minimize memory usage.
  */
 
 import { encodeTerrain } from "./terrain.js";
@@ -31,7 +27,7 @@ import { indexExtensions, splitLogLine } from "./extensions.js";
 export const REPLAY_FORMAT = "screeps-arena-replay";
 export const REPLAY_VERSION = 1;
 
-/** body のパーツ名 → 1 文字コード。`docs/FORMAT.md` と対応 */
+/** Body part name to single-character code. See `docs/FORMAT.md`. */
 const PART_CODE = {
     move: "m",
     work: "w",
@@ -43,10 +39,9 @@ const PART_CODE = {
 };
 
 /**
- * `actionLog` のキー → 1 文字コード。
+ * `actionLog` key to single-character code.
  *
- * 大文字は「自分が受けた側」の記録。attack と attacked の両方が残るので、
- * 撃った側だけを描くか、受けた側も描くかをビューアが選べる。
+ * Uppercase letters represent target/incoming actions (e.g. attacked, healed).
  */
 const ACTION_CODE = {
     attack: "a",
@@ -58,15 +53,10 @@ const ACTION_CODE = {
     healed: "E",
 };
 
-/**
- * 生の `_id` を文字列に揃える。
- *
- * 構造物は数値 id（`1`, `2`, ...）、creep は文字列 id（`"335"`）、
- * flag は名前（`"rampartsLeft"`）と型が混ざっているため。
- */
+/** Normalize raw `_id` values to strings across numeric, string, and flag name IDs. */
 const idOf = (o) => String(o._id);
 
-/** `store.energy` を取り出す。持たないオブジェクトは 0 */
+/** Extract energy value from store. */
 const energyOf = (o) => (o.store && typeof o.store.energy === "number" ? o.store.energy : 0);
 
 const energyCapOf = (o) =>
@@ -75,10 +65,7 @@ const energyCapOf = (o) =>
         : 0;
 
 /**
- * body 配列をランレングス文字列にする。`[move,move,attack]` → `"m2a1"`。
- *
- * 並び順は落とさない。Screeps ではダメージが前方のパーツから入るので、
- * 「tough が先頭に何枚あるか」が読めなくなると意味が無い。
+ * Encode body array into an order-preserving run-length string: `[move, move, attack]` → `"m2a1"`.
  *
  * @param {ReadonlyArray<{ type: string }>} body
  * @returns {string}
@@ -103,13 +90,10 @@ export function encodeBody(body) {
 }
 
 /**
- * 生の `gameData`（`/api/game/{shortId}` の応答）から表示用のメタ情報を組む。
+ * Build display metadata from raw `gameData` (`/api/game/{shortId}` response).
  *
- * player1 / player2 がどちらの人間かは自明ではない。リプレイ中の
- * オブジェクトは `"player1"` / `"player2"` としか言わず、`gameData.game.users` は
- * 閲覧者本人が先頭に来るなど別の順序で並んでいる。
- * 対戦したコード ID 配列 `usersCode` に対し、`firstPlayerIndex` が 1 の場合は
- * 盤面スロット（player1 / player2）が反転する（公式クライアント `getGamePlayers` と同等）。
+ * Resolves player slot ordering (`player1` / `player2`) using `usersCode` and `firstPlayerIndex`
+ * matching official game client behavior (`getGamePlayers`).
  *
  * @param {any} gameData
  * @returns {{ players: any[], result: any, arenaId: string | null, ticksLimit: number | null, createdAt: string | null }}
@@ -127,7 +111,7 @@ export function readGameMeta(gameData) {
     const userById = new Map(users.map((u) => [u._id, u]));
     const codeById = new Map(codes.map((c) => [c._id, c]));
 
-    // firstPlayerIndex が 1 の場合、盤面上のスロット (player1, player2) は [usersCode[1], usersCode[0]] となる
+    // When firstPlayerIndex is 1, board slots (player1, player2) invert to [usersCode[1], usersCode[0]]
     const slotCodeIds = [...usersCode];
     if (firstPlayerIndex === 1 && slotCodeIds.length >= 2) {
         [slotCodeIds[0], slotCodeIds[1]] = [slotCodeIds[1], slotCodeIds[0]];
@@ -137,7 +121,6 @@ export function readGameMeta(gameData) {
     const players = [];
     for (let i = 0; i < slots; i++) {
         const code = codeById.get(slotCodeIds[i]);
-        // usersCode から辿れないときのフォールバック
         const fallbackUser =
             firstPlayerIndex === 1 && users.length >= 2
                 ? i === 0
@@ -167,14 +150,12 @@ export function readGameMeta(gameData) {
 }
 
 /**
- * 勝敗を読む。
+ * Resolve match winner score to player slot index.
  *
- * Screeps Arena の `result.winner` は「`usersCode[0]` から見た勝敗スコア」を表す:
- *   - 1: usersCode[0] の勝利
- *   - 0: usersCode[1] の勝利
- *   - 0.5: 引き分け（実測: 2026-08-28 の XTTCQ7DA4T が `{"status":"ok","winner":0.5}`）
- *
- * 盤面スロット（players / side 0 または 1）の勝者インデックスにマッピングして返す。
+ * Screeps Arena `result.winner` represents score from perspective of `usersCode[0]`:
+ *   - 1: usersCode[0] won
+ *   - 0: usersCode[1] won
+ *   - 0.5: Draw
  */
 function readResult(result, players, firstPlayerIndex = 0) {
     if (!result || typeof result !== "object") return { winner: null, draw: false, raw: null };
@@ -184,9 +165,7 @@ function readResult(result, players, firstPlayerIndex = 0) {
         return { winner: null, draw: true, status: result.status ?? null, raw };
     }
 
-    // raw === 1 は usersCode[0] の勝利、raw === 0 は usersCode[1] の勝利
     const codeWinnerIndex = raw === 1 ? 0 : 1;
-    // firstPlayerIndex が 1 のときは盤面スロット順が反転している
     const slotWinnerIndex = firstPlayerIndex === 1 ? (codeWinnerIndex === 0 ? 1 : 0) : codeWinnerIndex;
 
     return {
@@ -199,12 +178,12 @@ function readResult(result, players, firstPlayerIndex = 0) {
 }
 
 /**
- * 逐次変換器を作る。
+ * Create an incremental normalizer.
  *
- * 使い方:
+ * Usage:
  * ```js
  * const n = createNormalizer({ gameData, shortId });
- * n.pushFrames(chunkFrames);   // Tick 昇順で
+ * n.pushFrames(chunkFrames);   // In tick order
  * n.pushLogs(logChunk);
  * const doc = n.finish();
  * ```
@@ -216,30 +195,28 @@ export function createNormalizer(init = {}) {
     const inner = init.gameData?.game?.game ?? {};
 
     const digits = typeof inner.terrain === "string" ? inner.terrain : "";
-    // Arena の地形は正方形。辺の長さは全セル数の平方根から決まる
     const side = Math.round(Math.sqrt(digits.length));
     const width = side > 0 ? side : 0;
     const height = side > 0 ? side : 0;
 
-    /** 静的オブジェクト（creep 以外）。初出時に 1 回だけ積む */
+    /** Static objects (non-creep) stored once upon introduction. */
     const objects = new Map();
-    /** 構造物の可変状態。差分を出すための直前値 */
+    /** Mutable structure state to calculate deltas against. */
     const structState = new Map();
-    /** creep の可変状態 */
+    /** Mutable creep state. */
     const creepState = new Map();
-    /** 出力する Tick 差分 */
+    /** Output tick deltas. */
     const ticks = [];
-    /** 同じ Tick を二度書かないための番人（チャンク境界の重なり対策） */
+    /** Guard against duplicate ticks across chunk boundaries. */
     const seen = new Set();
-    /** Tick → コンソールログ本文 */
+    /** Tick to console log text. */
     const logs = {};
-    /** Tick → メタ情報。`splitLogLine` が拾ったもの */
+    /** Tick to metadata parsed by splitLogLine. */
     const extByTick = new Map();
 
     let lastTick = -1;
     let maxTick = 0;
 
-    /** スロット名 → 陣営番号。`player1` → 0 */
     const sideOf = (user) => {
         if (user === undefined || user === null) return null;
         const m = /^player(\d+)$/.exec(String(user));
@@ -249,7 +226,7 @@ export function createNormalizer(init = {}) {
     };
 
     /**
-     * 1 フレーム（= 1 Tick の完全スナップショット）を差分に畳む。
+     * Fold 1 full frame snapshot into deltas.
      * @param {any} frame
      */
     function pushFrame(frame) {
@@ -282,15 +259,14 @@ export function createNormalizer(init = {}) {
             collectActions(o, actions);
         }
 
-        // 消えた creep = 死亡
+        // Dead creeps
         const dead = [];
         for (const id of creepState.keys()) {
             if (!aliveCreeps.has(id)) dead.push(id);
         }
         for (const id of dead) creepState.delete(id);
 
-        // 消えた構造物 = 破壊。HP 0 の墓標を残す
-        // （配列から消えるだけだと「そこに何も無い」と区別できない）
+        // Destroyed structures: retain hits: 0 tombstone marker
         for (const [id, st] of structState) {
             if (aliveStructs.has(id) || st.hits === 0) continue;
             st.hits = 0;
@@ -329,7 +305,6 @@ export function createNormalizer(init = {}) {
             prev.fatigue = fatigue;
             prev.spawning = spawning;
         }
-        // パーツが壊れると body が縮む。見た目にも戦力評価にも効くので拾う
         if (prev.body !== body) {
             bodies.push([id, body]);
             prev.body = body;
@@ -364,7 +339,6 @@ export function createNormalizer(init = {}) {
             st.hits = hits;
             st.energy = energy;
         }
-        // flag の所有者が変わる = 陣地の奪取。試合の山場なので必ず残す
         if (st.side !== side) {
             ownerDeltas.push([id, side]);
             st.side = side;
@@ -381,22 +355,21 @@ export function createNormalizer(init = {}) {
             if (typeof value === "object" && typeof value.x === "number") {
                 actions.push([id, code, value.x, value.y]);
             } else {
-                // rangedMassAttack のように対象座標を持たない行動
                 actions.push([id, code]);
             }
         }
     }
 
     return {
-        /** @param {ReadonlyArray<any>} frames Tick 昇順のフレーム配列（1 チャンク分） */
+        /** @param {ReadonlyArray<any>} frames Frames in tick order for 1 chunk */
         pushFrames(frames) {
             if (!Array.isArray(frames)) return;
             for (const frame of frames) pushFrame(frame);
         },
 
         /**
-         * ログチャンク（`{ "<tick>": "<text>" }`）を取り込む。
-         * 取得に失敗したチャンク（`{ status: 404 }`）は黙って捨てる。
+         * Incorporate a log chunk (`{ "<tick>": "<text>" }`).
+         * Failed chunks (`{ status: 404 }`) are ignored.
          * @param {any} chunk
          */
         pushLogs(chunk) {
@@ -409,9 +382,8 @@ export function createNormalizer(init = {}) {
             }
         },
 
-        /** @returns {any} 正規化リプレイ */
+        /** @returns {any} Normalized replay document */
         finish() {
-            // ログ由来のメタ情報を対応する Tick へ載せる
             for (const tick of ticks) {
                 const ext = extByTick.get(tick.k);
                 if (ext !== undefined) tick.e = ext;
@@ -444,17 +416,14 @@ export function createNormalizer(init = {}) {
 }
 
 /**
- * `fetch_match` が保存した生 JSON を丸ごと正規化する。
- *
- * すでにファイルとして手元にある生ダンプ向け。これから取りに行くなら
- * フェッチャ側の逐次変換のほうがメモリを食わない。
+ * Normalize a complete raw match dump object.
  *
  * @param {any} raw
  * @param {{ shortId?: string | null }} [options]
  */
 export function normalizeMatch(raw, options = {}) {
     if (!raw || typeof raw !== "object" || !raw.replays) {
-        throw new Error("生のリプレイ JSON ではない（`replays` が無い）");
+        throw new Error("not a raw replay JSON (missing replays property)");
     }
     const n = createNormalizer({
         gameData: raw.gameData,
@@ -462,7 +431,6 @@ export function normalizeMatch(raw, options = {}) {
         gameId: raw.realGameId ?? null,
         fetchedAt: raw.fetchedAt ?? null,
     });
-    // チャンクの鍵は数値の文字列。辞書順だと 1000 が 200 より前に来るので数値で並べ直す
     const chunks = Object.keys(raw.replays)
         .map(Number)
         .filter((n) => Number.isFinite(n))

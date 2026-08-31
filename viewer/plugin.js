@@ -1,66 +1,46 @@
 /**
- * ビューアの拡張機構。
+ * Viewer plugin host and runtime extension system.
  *
  * ------------------------------------------------------------------
- * ねらい
+ * Purpose
  * ------------------------------------------------------------------
- * 本体は「誰の試合でも同じように見える情報」だけを描く。
- * 自分のボットの内部状態（役割分担・作戦モード・評価値）は人それぞれなので、
- * 本体に入れると他人には無意味な UI が増えるし、入れた人は fork の維持に縛られる。
- *
- * そこで内部状態は
- *
- *   1. ボットが `console.log("@<名前空間> <JSON>")` で吐き（`src/extensions.js`）
- *   2. 取得時に `tick.e.<名前空間>` へ載り
- *   3. **外部ファイルとして置いたプラグイン**がそれを読んで描く
- *
- * という経路を通る。本体のコードにもリプレイ形式にも手を入れる必要がない。
+ * The core viewer renders only universal game information present in every match.
+ * Bot-specific state (squad assignments, tactical modes, evaluations) is transported
+ * via console logs (`src/extensions.js`) and rendered by standalone plugin scripts.
  *
  * ------------------------------------------------------------------
- * プラグインの書き方
+ * Plugin Structure
  * ------------------------------------------------------------------
- * ES モジュールで、既定エクスポートに以下の形のオブジェクトを置く。
- * すべての項目が任意。
+ * An ES module with a default exported object. All fields are optional.
  *
  * ```js
  * export default {
  *     name: "macro-zones",
- *     requires: ["zones"],                       // 必要な名前空間。無いログでは自動的に無効
- *     toggles: [{ id: "zones", label: "ゾーン", default: true }],
+ *     requires: ["zones"],                       // Required namespaces; sleeps if missing in log
+ *     toggles: [{ id: "zones", label: "Zones", default: true }],
  *     legend: [{ color: "#8ee0ff", label: "DEFENSE" }],
- *     drawOverlay(api) { ... },                  // 盤面へ重ねて描く
- *     panels: [{ id: "zones", title: "ゾーン配分", render(el, api) { ... } }],
+ *     drawOverlay(api) { ... },                  // Canvas overlay on board
+ *     panels: [{ id: "zones", title: "Zones", render(el, api) { ... } }],
  * };
- * ```
- *
- * 置き場所は自分のディレクトリでよい:
- *
- * ```
- * arena-tools view --plugins ~/my-bot/arena-plugins
  * ```
  */
 
 /**
- * 読み込んだプラグインの管理。
- *
- * 1 つのプラグインが投げた例外で盤面ごと止まると原因が分からなくなるので、
- * 呼び出しはすべて包んで、落ちたプラグインだけを切り離す。
+ * Host managing loaded plugins, lifecycle, fault isolation, and dispatch.
  */
 export class PluginHost {
     constructor() {
         /** @type {Array<{ id: string, plugin: any, active: boolean, error: string | null, missing?: string[] }>} */
         this.entries = [];
-        /** トグルの状態。`toggles[].id` → boolean */
+        /** Toggle states: `toggles[].id` -> boolean */
         this.toggleState = new Map();
         this.onError = null;
     }
 
     /**
-     * プラグインを読み込む。
+     * Load a plugin from a same-origin path.
      *
-     * 読めるのは**同一オリジンのパス**だけ。外部 URL を許すと、
-     * 共有されたリンクを開いただけで任意のスクリプトが走ることになる。
-     * 自分のプラグインは `--plugins <dir>` で配ること。
+     * External origins are rejected for security. Serve plugins locally using `--plugins <dir>`.
      *
      * @param {string} url
      */
@@ -68,11 +48,11 @@ export class PluginHost {
         const id = url;
         try {
             if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(url) || url.startsWith("//")) {
-                throw new Error("プラグインは同一オリジンのパスのみ（--plugins <dir> で配ること）");
+                throw new Error("plugins must use same-origin paths (serve with --plugins <dir>)");
             }
             const mod = await import(url);
             const plugin = mod.default ?? mod;
-            if (!plugin || typeof plugin !== "object") throw new Error("既定エクスポートがオブジェクトでない");
+            if (!plugin || typeof plugin !== "object") throw new Error("default export is not an object");
 
             for (const t of plugin.toggles ?? []) {
                 if (!this.toggleState.has(t.id)) this.toggleState.set(t.id, t.default !== false);
@@ -88,10 +68,7 @@ export class PluginHost {
     }
 
     /**
-     * 読み込んだリプレイに対して、各プラグインを有効にするか決める。
-     *
-     * `requires` の名前空間がログに 1 つも無ければ、そのプラグインは黙って寝かせる
-     * （他人の試合を開いたときに空のパネルが並ばないように）。
+     * Activate or sleep plugins based on available metadata namespaces in a match replay.
      *
      * @param {any} doc
      */
@@ -105,7 +82,7 @@ export class PluginHost {
         }
     }
 
-    /** 有効なプラグインだけを回す */
+    /** Iterate over active, non-faulted plugins. */
     *active() {
         for (const entry of this.entries) {
             if (entry.active && entry.plugin !== null) yield entry.plugin;
@@ -120,7 +97,7 @@ export class PluginHost {
         this.toggleState.set(id, value);
     }
 
-    /** 全プラグインのトグル定義を集める */
+    /** Aggregate all toggle definitions across active plugins. */
     toggles() {
         const out = [];
         for (const plugin of this.active()) {
@@ -129,7 +106,7 @@ export class PluginHost {
         return out;
     }
 
-    /** 全プラグインの凡例を集める */
+    /** Aggregate all legend entries across active plugins. */
     legend() {
         const out = [];
         for (const plugin of this.active()) {
@@ -138,7 +115,7 @@ export class PluginHost {
         return out;
     }
 
-    /** 全プラグインのパネル定義を集める */
+    /** Aggregate all panel definitions across active plugins. */
     panels() {
         const out = [];
         for (const plugin of this.active()) {
@@ -148,7 +125,7 @@ export class PluginHost {
     }
 
     /**
-     * 盤面へのオーバーレイ描画を回す。
+     * Execute board overlay rendering across active plugins.
      * @param {any} api
      */
     drawOverlay(api) {
@@ -158,7 +135,7 @@ export class PluginHost {
         }
     }
 
-    /** 例外を出したプラグインは切り離して、以降呼ばない */
+    /** Safely execute plugin callbacks with error isolation. */
     guard(plugin, fn) {
         try {
             return fn();
@@ -175,7 +152,7 @@ export class PluginHost {
 }
 
 /**
- * URL の `?plugin=` からプラグインのパスを集める。複数指定してよい。
+ * Extract plugin paths from URL query string `?plugin=...`.
  * @param {string} search
  */
 export function pluginsFromQuery(search) {
