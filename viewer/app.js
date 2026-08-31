@@ -281,13 +281,20 @@ function drawStructures(ctx, cell) {
                 ctx.fillRect(x, y, cell, cell);
                 break;
             case "extension": {
-                // 残エネルギーを塗りの高さで出す。補給の流れが盤の上で読める
+                // 大きさは cell より一回り小さく、残エネルギーは透明度で示す
                 const ratio = o.energyCapacity > 0 ? (cur?.energy ?? 0) / o.energyCapacity : 0;
-                ctx.fillStyle = fade(sideColor(side), 0.28);
-                ctx.fillRect(x, y, cell, cell);
-                ctx.fillStyle = sideColor(side);
-                const h = cell * Math.max(0, Math.min(1, ratio));
-                ctx.fillRect(x, y + (cell - h), cell, h);
+                const clamped = Math.max(0, Math.min(1, ratio));
+                const size = cell * 0.7;
+                const pad = (cell - size) / 2;
+                const sx = x + pad;
+                const sy = y + pad;
+                const color = sideColor(side);
+
+                ctx.fillStyle = fade(color, 0.15 + clamped * 0.75);
+                ctx.fillRect(sx, sy, size, size);
+                ctx.strokeStyle = fade(color, 0.35 + clamped * 0.55);
+                ctx.lineWidth = Math.max(1, cell * 0.08);
+                ctx.strokeRect(sx, sy, size, size);
                 break;
             }
             case "spawn": {
