@@ -17,8 +17,12 @@ import { fetchMatch } from "./fetch_match.js";
 import { normalizeMatch } from "./normalize.js";
 import { describeReplay, isReplayDoc, readReplay, writeReplay } from "./replay_io.js";
 import { DEFAULT_PORT, listReplays, resolveServeOptions, serve } from "./serve.js";
+import type { ReplayDoc } from "./types.js";
 
-const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const CURRENT_DIR = dirname(fileURLToPath(import.meta.url));
+const ROOT = CURRENT_DIR.endsWith("dist/src") || CURRENT_DIR.endsWith("dist\\src")
+    ? resolve(CURRENT_DIR, "../..")
+    : resolve(CURRENT_DIR, "..");
 
 const USAGE = `
 Screeps: Arena Tools
@@ -39,10 +43,15 @@ Screeps: Arena Tools
       Display summary of a normalized replay file.
 `.trim();
 
+interface ParsedArgs {
+    positional: string[];
+    flags: Record<string, string | boolean>;
+}
+
 /** Simple argument parser extracting positional values and flags (-o, --out, etc.). */
-function parseArgs(argv) {
-    const positional = [];
-    const flags = {};
+function parseArgs(argv: string[]): ParsedArgs {
+    const positional: string[] = [];
+    const flags: Record<string, string | boolean> = {};
     for (let i = 0; i < argv.length; i++) {
         const arg = argv[i];
         if (!arg.startsWith("-")) {
@@ -66,9 +75,12 @@ function parseArgs(argv) {
     return { positional, flags };
 }
 
-const outOf = (flags) => flags.o ?? flags.out ?? null;
+const outOf = (flags: Record<string, string | boolean>): string | null => {
+    const val = flags.o ?? flags.out;
+    return typeof val === "string" ? val : null;
+};
 
-async function cmdFetch(positional, flags) {
+async function cmdFetch(positional: string[], flags: Record<string, string | boolean>): Promise<void> {
     if (positional.length === 0) throw new Error("Pass a match URL or short ID");
     const shortId = parseMatchRef(positional[0]);
 
@@ -78,7 +90,7 @@ async function cmdFetch(positional, flags) {
     const doc = await fetchMatch(shortId, {
         onProgress: (info) => {
             if (info.phase === "chunk") {
-                const line = `  fetching ${info.done}/${info.total} (${info.message})`;
+                const line = `  fetching ${info.done}/${info.total} (${info.message ?? ""})`;
                 if (process.stdout.isTTY) process.stdout.write(`\r${line}   `);
                 else if (info.done === info.total) console.log(line);
             } else {
@@ -98,7 +110,7 @@ async function cmdFetch(positional, flags) {
     console.log(`\n  To view: arena-tools view`);
 }
 
-function cmdConvert(positional, flags) {
+function cmdConvert(positional: string[], flags: Record<string, string | boolean>): void {
     if (positional.length === 0) throw new Error("Pass a raw JSON file to convert");
     const input = resolve(process.cwd(), positional[0]);
     const raw = readReplay(input);
@@ -121,7 +133,7 @@ function cmdConvert(positional, flags) {
     reportExtensions(doc);
 }
 
-function cmdView(flags) {
+function cmdView(flags: Record<string, string | boolean>): void {
     const opts = resolveServeOptions(ROOT, {
         port: flags.port !== undefined ? Number(flags.port) : undefined,
         replayDir: typeof flags.replays === "string" ? flags.replays : undefined,
@@ -138,7 +150,7 @@ function cmdView(flags) {
     console.log("==================================================");
 }
 
-function cmdInfo(positional) {
+function cmdInfo(positional: string[]): void {
     if (positional.length === 0) throw new Error("Pass a replay file");
     const doc = readReplay(resolve(process.cwd(), positional[0]));
     if (!isReplayDoc(doc)) throw new Error("Not a normalized replay (run `convert` first)");
@@ -154,17 +166,19 @@ function cmdInfo(positional) {
 }
 
 /** Report metadata namespaces extracted from console logs. */
-function reportExtensions(doc) {
+function reportExtensions(doc: ReplayDoc): void {
     const names = Object.keys(doc.extensions ?? {});
     if (names.length === 0) return;
     console.log("  Extensions:");
     for (const ns of names) {
         const e = doc.extensions[ns];
-        console.log(`    @${ns} — ${e.count} entries (ticks ${e.firstTick}..${e.lastTick})`);
+        if (e) {
+            console.log(`    @${ns} — ${e.count} entries (ticks ${e.firstTick}..${e.lastTick})`);
+        }
     }
 }
 
-async function main() {
+async function main(): Promise<void> {
     const [command, ...rest] = process.argv.slice(2);
     const { positional, flags } = parseArgs(rest);
 

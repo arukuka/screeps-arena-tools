@@ -23,11 +23,11 @@ const OBJECT_ID_RE = /^[0-9a-f]{24}$/;
  *   - `arena.screeps.com/game/XTTCQ7DA4T` (omitted scheme)
  *   - `6a91f24fe5664ad5be8d41a3` (MongoDB ObjectId)
  *
- * @param {string} input
- * @returns {string} Short ID or ObjectId
+ * @param input
+ * @returns Short ID or ObjectId
  * @throws {Error} If input cannot be parsed
  */
-export function parseMatchRef(input) {
+export function parseMatchRef(input: string): string {
     if (typeof input !== "string") throw new Error("match reference must be a string");
     const text = input.trim().replace(/^["']|["']$/g, "");
     if (text === "") throw new Error("match reference is empty");
@@ -48,10 +48,10 @@ export function parseMatchRef(input) {
 /**
  * Extract `/game/<id>` from a URL-like string.
  *
- * @param {string} text
- * @returns {string | null}
+ * @param text
+ * @returns Short ID or ObjectId, or null
  */
-function extractFromUrl(text) {
+function extractFromUrl(text: string): string | null {
     // Strip custom scheme so relative parsing works cleanly
     const path = text.replace(/^[a-zA-Z][a-zA-Z0-9+.-]*:\/{0,3}/, "/");
     const m = /\/game\/([A-Za-z0-9]+)/.exec(path);
@@ -65,7 +65,7 @@ function extractFromUrl(text) {
 }
 
 /** Construct a shareable URL from a short ID for logging and UI. */
-export function matchUrl(shortId) {
+export function matchUrl(shortId: string): string {
     return `https://arena.screeps.com/game/${shortId}`;
 }
 

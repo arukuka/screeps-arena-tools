@@ -2,8 +2,8 @@
  * Screeps: Arena Replay Viewer.
  *
  * Renders universal match information (terrain, structures, creeps, actions, energy, flags).
- * Bot-specific state is transported via log metadata and rendered by plugins (`plugin.js`).
- * State management and timeline logic are in `../src/timeline.js`.
+ * Bot-specific state is transported via log metadata and rendered by plugins (`plugin.ts`).
+ * State management and timeline logic are in `../src/timeline.ts`.
  */
 
 import {
@@ -18,30 +18,40 @@ import {
 } from "../src/timeline.js";
 import { normalizeMatch } from "../src/normalize.js";
 import { PluginHost, pluginsFromQuery } from "./plugin.js";
+import type {
+    BoardState,
+    PlayerInfo,
+    PluginApi,
+    PluginLegend,
+    ReplayDoc,
+    ReplayObject,
+    StructureState,
+    Timeline,
+} from "../src/types.js";
 
 // ============================================================
 // Constants
 // ============================================================
 
 /** Default side colors (overridden by replay `playerColor` if present). */
-const FALLBACK_SIDE_COLOR = ["#4aa8ff", "#ff7a5c"];
+const FALLBACK_SIDE_COLOR: readonly string[] = ["#4aa8ff", "#ff7a5c"];
 const NEUTRAL = "#6b7787";
 
 /** Terrain colors matching `decodeTerrain` indices (0=plain / 1=wall / 2=swamp). */
-const TERRAIN_RGB = [
+const TERRAIN_RGB: readonly (readonly [number, number, number])[] = [
     [18, 24, 31],
     [0, 0, 0],
     [29, 42, 31],
 ];
 
 /** Combat part indicator colors displayed as center dots on creeps. */
-const ROLE_COLOR = {
+const ROLE_COLOR: Record<string, string> = {
     attack: "#ff5d5d",
     ranged_attack: "#ffd166",
     heal: "#6ee7a8",
 };
 
-const ACTION_COLOR = {
+const ACTION_COLOR: Record<string, string> = {
     a: "#ff5d5d",
     r: "#ffb15d",
     R: "#ffb15d",
@@ -49,22 +59,51 @@ const ACTION_COLOR = {
     H: "#8ee0ff",
 };
 
-const $ = (id) => document.getElementById(id);
-const $input = (id) => /** @type {HTMLInputElement} */ ($(id));
-const inputOf = (e) => /** @type {HTMLInputElement} */ (e.target);
+const $ = <T extends HTMLElement = HTMLElement>(id: string): T => document.getElementById(id) as T;
+const $input = (id: string): HTMLInputElement => document.getElementById(id) as HTMLInputElement;
+const inputOf = (e: Event): HTMLInputElement => e.target as HTMLInputElement;
 
 // ============================================================
 // View State
 // ============================================================
 
-const board = /** @type {HTMLCanvasElement} */ ($("board"));
-const boardCtx = board.getContext("2d");
-const chart = /** @type {HTMLCanvasElement} */ ($("chart"));
-const chartCtx = chart.getContext("2d");
+const board = $("board") as HTMLCanvasElement;
+const boardCtx = board.getContext("2d")!;
+const chart = $("chart") as HTMLCanvasElement;
+const chartCtx = chart.getContext("2d")!;
 
 const plugins = new PluginHost();
 
-const view = {
+interface TimeSeries {
+    parts: Int32Array[];
+    counts: Int32Array[];
+    captures: number[];
+    max: number;
+}
+
+interface ViewState {
+    timeline: Timeline | null;
+    series: TimeSeries | null;
+    state: BoardState | null;
+    index: number;
+    cell: number;
+    terrainCanvas: HTMLCanvasElement | null;
+    extIndex: Map<number, Record<string, unknown[]>>;
+    selected: string | null;
+    playing: boolean;
+    lastStep: number;
+    showActions: boolean;
+    showStructures: boolean;
+    zoom: number;
+    panX: number;
+    panY: number;
+    dragging: boolean;
+    dragStart: { x: number; y: number; panX: number; panY: number };
+    hasDragged: boolean;
+    sideColors: string[];
+}
+
+const view: ViewState = {
     timeline: null,
     series: null,
     state: null,
@@ -83,13 +122,14 @@ const view = {
     dragging: false,
     dragStart: { x: 0, y: 0, panX: 0, panY: 0 },
     hasDragged: false,
-    sideColors: FALLBACK_SIDE_COLOR,
+    sideColors: [...FALLBACK_SIDE_COLOR],
 };
 
-const sideColor = (side) => (side === null || side === undefined ? NEUTRAL : view.sideColors[side] ?? NEUTRAL);
+const sideColor = (side: number | null | undefined): string =>
+    side === null || side === undefined ? NEUTRAL : view.sideColors[side] ?? NEUTRAL;
 
 /** Apply alpha transparency to hex color `#rrggbb`. */
-function fade(hex, alpha) {
+function fade(hex: string, alpha: number): string {
     const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex ?? "");
     if (m === null) return hex;
     return `rgba(${parseInt(m[1], 16)},${parseInt(m[2], 16)},${parseInt(m[3], 16)},${alpha})`;
@@ -100,7 +140,7 @@ function fade(hex, alpha) {
 // ============================================================
 
 /** Decompress `.gz` files client-side if loaded via drag-and-drop. */
-async function readReplayFile(file) {
+async function readReplayFile(file: File): Promise<any> {
     if (file.name.endsWith(".gz")) {
         const stream = file.stream().pipeThrough(new DecompressionStream("gzip"));
         return JSON.parse(await new Response(stream).text());
@@ -109,15 +149,17 @@ async function readReplayFile(file) {
 }
 
 /** Accept either normalized replay JSON or raw match dump JSON. */
-function acceptDocument(json, label) {
-    const doc = json?.format === "screeps-arena-replay" ? json : normalizeMatch(json);
+function acceptDocument(json: any, label?: string): void {
+    const doc: ReplayDoc = json?.format === "screeps-arena-replay" ? json : normalizeMatch(json);
     loadReplay(doc, label);
 }
 
-function loadReplay(doc, label) {
+function loadReplay(doc: ReplayDoc, _label?: string): void {
     view.timeline = buildTimeline(doc);
     view.series = buildSeries(view.timeline);
-    view.extIndex = new Map(doc.ticks.filter((t) => t.e !== undefined).map((t) => [t.k, t.e]));
+    view.extIndex = new Map(
+        doc.ticks.filter((t) => t.e !== undefined).map((t) => [t.k, t.e!]),
+    );
     view.sideColors = doc.meta.players.map((p, i) => p.color ?? FALLBACK_SIDE_COLOR[i] ?? NEUTRAL);
     view.terrainCanvas = buildTerrainCanvas(view.timeline);
     view.index = 0;
@@ -139,14 +181,14 @@ function loadReplay(doc, label) {
     renderPluginList();
 }
 
-function formatPlayer(player, fallback = "player") {
+function formatPlayer(player: PlayerInfo | undefined, fallback = "player"): string {
     if (!player) return fallback;
     const name = player.username ?? player.slot ?? fallback;
     const ver = player.codeVersion !== null && player.codeVersion !== undefined ? ` (v${player.codeVersion})` : "";
     return `${name}${ver}`;
 }
 
-const describe = (doc) => {
+const describe = (doc: ReplayDoc): string => {
     const names = doc.meta.players
         .map((p, i) => {
             const formatted = formatPlayer(p, p?.slot ?? `side ${i}`);
@@ -158,13 +200,13 @@ const describe = (doc) => {
 };
 
 /** Build time-series data for the scrubber chart in a single forward pass. */
-function buildSeries(timeline) {
+function buildSeries(timeline: Timeline): TimeSeries {
     const sides = timeline.doc.meta.players.length;
     const parts = Array.from({ length: sides }, () => new Int32Array(timeline.length));
     const counts = Array.from({ length: sides }, () => new Int32Array(timeline.length));
-    const captures = [];
+    const captures: number[] = [];
 
-    const creeps = new Map();
+    const creeps = new Map<string, { side: number | null; size: number }>();
     const flagIds = new Set(timeline.doc.objects.filter((o) => o.kind === "flag").map((o) => o.id));
 
     for (let i = 0; i < timeline.length; i++) {
@@ -189,12 +231,12 @@ function buildSeries(timeline) {
     return { parts, counts, captures, max };
 }
 
-function buildTerrainCanvas(timeline) {
+function buildTerrainCanvas(timeline: Timeline): HTMLCanvasElement {
     const { width, height, terrain } = timeline;
     const off = document.createElement("canvas");
     off.width = width;
     off.height = height;
-    const ctx = off.getContext("2d");
+    const ctx = off.getContext("2d")!;
     const img = ctx.createImageData(width, height);
     for (let i = 0; i < terrain.length; i++) {
         const [r, g, b] = TERRAIN_RGB[terrain[i]] ?? TERRAIN_RGB[0];
@@ -211,19 +253,19 @@ function buildTerrainCanvas(timeline) {
 // Board Rendering
 // ============================================================
 
-function applyBoardTransform() {
+function applyBoardTransform(): void {
     board.style.transform = `translate(${view.panX}px, ${view.panY}px) scale(${view.zoom})`;
     $("btn-zoom-reset").textContent = `${Math.round(view.zoom * 100)}%`;
 }
 
-function resetBoardTransform() {
+function resetBoardTransform(): void {
     view.zoom = 1;
     view.panX = 0;
     view.panY = 0;
     applyBoardTransform();
 }
 
-function zoomAt(target, clientX, clientY) {
+function zoomAt(target: number, clientX?: number, clientY?: number): void {
     const next = Math.max(0.5, Math.min(10, target));
     if (Math.abs(next - view.zoom) < 0.001) return;
     const rect = $("board-wrap").getBoundingClientRect();
@@ -236,7 +278,7 @@ function zoomAt(target, clientX, clientY) {
     applyBoardTransform();
 }
 
-function resizeBoard() {
+function resizeBoard(): void {
     if (view.timeline === null) return;
     const wrap = $("board-wrap");
     const { width, height } = view.timeline;
@@ -253,9 +295,11 @@ function resizeBoard() {
     render();
 }
 
-const isDestroyed = (o, cur) => o.hitsMax > 0 && (cur === undefined || cur.hits <= 0);
+const isDestroyed = (o: ReplayObject, cur?: StructureState): boolean =>
+    o.hitsMax > 0 && (cur === undefined || cur.hits <= 0);
 
-function drawStructures(ctx, cell) {
+function drawStructures(ctx: CanvasRenderingContext2D, cell: number): void {
+    if (!view.timeline || !view.state) return;
     const { doc } = view.timeline;
     const state = view.state;
 
@@ -328,9 +372,9 @@ function drawStructures(ctx, cell) {
     }
 }
 
-function dominantPart(body) {
+function dominantPart(body: string): string | null {
     const counts = bodyCounts(body);
-    let best = null;
+    let best: string | null = null;
     let bestCount = 0;
     for (const name of ["attack", "ranged_attack", "heal"]) {
         if ((counts[name] ?? 0) > bestCount) {
@@ -341,12 +385,13 @@ function dominantPart(body) {
     return best;
 }
 
-function creepRadius(body, cell) {
+function creepRadius(body: string, cell: number): number {
     const size = bodySize(body);
     return cell * (0.45 + 0.55 * Math.min(1, Math.sqrt(size) / 6));
 }
 
-function drawCreeps(ctx, cell) {
+function drawCreeps(ctx: CanvasRenderingContext2D, cell: number): void {
+    if (!view.state) return;
     for (const c of view.state.creeps.values()) {
         const cx = c.x * cell + cell / 2;
         const cy = c.y * cell + cell / 2;
@@ -382,7 +427,8 @@ function drawCreeps(ctx, cell) {
     }
 }
 
-function drawActions(ctx, cell) {
+function drawActions(ctx: CanvasRenderingContext2D, cell: number): void {
+    if (!view.state || !view.timeline) return;
     const state = view.state;
     for (const entry of state.actions) {
         const [id, code, tx, ty] = entry;
@@ -403,15 +449,15 @@ function drawActions(ctx, cell) {
         }
         ctx.beginPath();
         ctx.moveTo(ax, ay);
-        ctx.lineTo(tx * cell + cell / 2, ty * cell + cell / 2);
+        ctx.lineTo(tx * cell + cell / 2, (ty ?? 0) * cell + cell / 2);
         ctx.strokeStyle = fade(color, 0.85);
         ctx.lineWidth = Math.max(1, cell * 0.18);
         ctx.stroke();
     }
 }
 
-function render() {
-    if (view.timeline === null || view.state === null) return;
+function render(): void {
+    if (view.timeline === null || view.state === null || view.terrainCanvas === null) return;
     const cell = view.cell;
     const { width, height } = view.timeline;
 
@@ -437,7 +483,8 @@ function render() {
     $input("scrubber").value = String(view.index);
 }
 
-function pluginApi() {
+function pluginApi(): PluginApi {
+    if (!view.timeline || !view.state) throw new Error("Viewer not initialized");
     return {
         ctx: boardCtx,
         cell: view.cell,
@@ -447,11 +494,11 @@ function pluginApi() {
         tick: view.state.tick,
         index: view.index,
         ext: view.state.ext,
-        extAt: (k) => view.extIndex.get(k) ?? null,
+        extAt: (k: number) => view.extIndex.get(k) ?? null,
         selected: view.selected,
         sideColor,
         fade,
-        isToggled: (id) => plugins.isToggled(id),
+        isToggled: (id: string) => plugins.isToggled(id),
     };
 }
 
@@ -459,7 +506,7 @@ function pluginApi() {
 // Scrubber Chart
 // ============================================================
 
-function renderChart() {
+function renderChart(): void {
     const dpr = window.devicePixelRatio || 1;
     const w = chart.clientWidth;
     const h = chart.clientHeight;
@@ -467,11 +514,11 @@ function renderChart() {
     chart.height = h * dpr;
     chartCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
     chartCtx.clearRect(0, 0, w, h);
-    if (view.series === null) return;
+    if (view.series === null || view.timeline === null) return;
 
     const { parts, captures, max } = view.series;
     const n = view.timeline.length;
-    const xOf = (i) => (n <= 1 ? 0 : (i / (n - 1)) * w);
+    const xOf = (i: number): number => (n <= 1 ? 0 : (i / (n - 1)) * w);
 
     // Flag capture markers
     chartCtx.strokeStyle = "rgba(255,209,102,0.35)";
@@ -508,7 +555,7 @@ function renderChart() {
 // Inspector Panels
 // ============================================================
 
-function renderMatchInfo(doc) {
+function renderMatchInfo(doc: ReplayDoc): void {
     const m = doc.meta;
     let result = "Unknown";
     if (m.result.draw) {
@@ -520,7 +567,7 @@ function renderMatchInfo(doc) {
     } else if (m.result.winnerName) {
         result = `${m.result.winnerName} Won 👑`;
     }
-    const rows = [
+    const rows: [string, string][] = [
         ["Match", m.shortId ?? "-"],
         ["Date", m.createdAt ? m.createdAt.replace("T", " ").slice(0, 19) : "-"],
         ["Tick", `${m.ticks}${m.ticksLimit ? ` / ${m.ticksLimit}` : ""}`],
@@ -531,10 +578,11 @@ function renderMatchInfo(doc) {
     $("match-info").innerHTML = rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
 }
 
-const escapeHtml = (text) =>
-    String(text).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
+const escapeHtml = (text: string | number | null | undefined): string =>
+    String(text ?? "").replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch] ?? ch);
 
-function renderSideStats() {
+function renderSideStats(): void {
+    if (!view.timeline || !view.state) return;
     const stats = sideStats(view.timeline, view.state);
     const players = view.timeline.doc.meta.players;
     const result = view.timeline.doc.meta.result;
@@ -557,7 +605,8 @@ function renderSideStats() {
         .join("");
 }
 
-function renderActionList() {
+function renderActionList(): void {
+    if (!view.state) return;
     const actions = view.state.actions;
     const el = $("action-list");
     if (actions.length === 0) {
@@ -569,7 +618,7 @@ function renderActionList() {
     el.innerHTML = actions
         .filter(([, code]) => !INCOMING_ACTIONS.has(code))
         .map(([id, code, x, y]) => {
-            const c = view.state.creeps.get(id);
+            const c = view.state?.creeps.get(id);
             const color = c ? sideColor(c.side) : NEUTRAL;
             const where = x === undefined ? "" : ` → (${x},${y})`;
             return `<div class="action-row"><span class="who" style="color:${color}">${escapeHtml(id)}</span><span>${ACTION_NAME[code] ?? escapeHtml(code)}${where}</span></div>`;
@@ -577,7 +626,8 @@ function renderActionList() {
         .join("");
 }
 
-function renderConsoleLog() {
+function renderConsoleLog(): void {
+    if (!view.timeline || !view.state) return;
     const text = view.timeline.doc.logs?.[String(view.state.tick)];
     const el = $("console-log");
     if (!text) {
@@ -589,7 +639,8 @@ function renderConsoleLog() {
     el.textContent = text;
 }
 
-function renderUnitDetail() {
+function renderUnitDetail(): void {
+    if (!view.state || !view.timeline) return;
     const el = $("unit-detail");
     if (view.selected === null) {
         el.className = "hint";
@@ -608,8 +659,8 @@ function renderUnitDetail() {
         .join(", ");
     const mine = view.state.actions.filter(([id]) => id === c.id);
     const acted = mine.length === 0 ? "-" : mine.map(([, code]) => ACTION_NAME[code] ?? code).join(", ");
-    const p = view.timeline.doc.meta.players[c.side];
-    const sideName = escapeHtml(formatPlayer(p, c.side));
+    const p = c.side !== null ? view.timeline.doc.meta.players[c.side] : undefined;
+    const sideName = escapeHtml(formatPlayer(p, c.side !== null ? `side ${c.side}` : "neutral"));
     el.innerHTML = `
         <dl class="kv">
             <dt>id</dt><dd>${escapeHtml(c.id)}</dd>
@@ -623,15 +674,16 @@ function renderUnitDetail() {
         </dl>`;
 }
 
-function renderLegend() {
+function renderLegend(): void {
+    if (!view.timeline) return;
     const players = view.timeline.doc.meta.players;
-    const items = [
+    const items: PluginLegend[] = [
         ...players.map((p, i) => ({ color: sideColor(i), label: escapeHtml(formatPlayer(p, `side ${i}`)) })),
-        { color: ROLE_COLOR.attack, label: "attack" },
-        { color: ROLE_COLOR.ranged_attack, label: "ranged" },
-        { color: ROLE_COLOR.heal, label: "heal" },
-        { color: ACTION_COLOR.a, label: "attack", line: true },
-        { color: ACTION_COLOR.h, label: "heal", line: true },
+        { color: ROLE_COLOR.attack!, label: "attack" },
+        { color: ROLE_COLOR.ranged_attack!, label: "ranged" },
+        { color: ROLE_COLOR.heal!, label: "heal" },
+        { color: ACTION_COLOR.a!, label: "attack", line: true },
+        { color: ACTION_COLOR.h!, label: "heal", line: true },
         ...plugins.legend(),
     ];
     $("legend").innerHTML = items
@@ -643,7 +695,7 @@ function renderLegend() {
 // Plugin UI
 // ============================================================
 
-function renderPluginList() {
+function renderPluginList(): void {
     const el = $("plugin-list");
     if (plugins.entries.length === 0) {
         el.innerHTML = '<p class="hint">None</p>';
@@ -661,31 +713,32 @@ function renderPluginList() {
         .join("");
 }
 
-function renderPluginToggles() {
+function renderPluginToggles(): void {
     const el = $("plugin-toggles");
     const toggles = plugins.toggles();
     el.innerHTML = toggles
         .map((t) => `<label class="toggle"><input type="checkbox" data-plugin-toggle="${escapeHtml(t.id)}" ${plugins.isToggled(t.id) ? "checked" : ""} /> ${escapeHtml(t.label)}</label>`)
         .join("");
-    for (const raw of el.querySelectorAll("[data-plugin-toggle]")) {
-        const input = /** @type {HTMLInputElement} */ (raw);
-        input.addEventListener("change", () => {
-            plugins.setToggle(input.dataset.pluginToggle, input.checked);
-            render();
+    for (const raw of el.querySelectorAll<HTMLInputElement>("[data-plugin-toggle]")) {
+        raw.addEventListener("change", () => {
+            if (raw.dataset.pluginToggle) {
+                plugins.setToggle(raw.dataset.pluginToggle, raw.checked);
+                render();
+            }
         });
     }
 }
 
-function renderPluginPanels() {
+function renderPluginPanels(): void {
     const host = $("plugin-panels");
     const panels = plugins.panels();
     const wanted = new Set(panels.map((p) => p.id));
 
     for (const el of [...host.children]) {
-        if (!wanted.has(/** @type {HTMLElement} */ (el).dataset.panelId)) el.remove();
+        if (!wanted.has((el as HTMLElement).dataset.panelId!)) el.remove();
     }
     for (const panel of panels) {
-        let section = /** @type {HTMLElement} */ (host.querySelector(`[data-panel-id="${CSS.escape(panel.id)}"]`));
+        let section = host.querySelector<HTMLElement>(`[data-panel-id="${CSS.escape(panel.id)}"]`);
         if (section === null) {
             section = document.createElement("section");
             section.className = "panel";
@@ -693,9 +746,11 @@ function renderPluginPanels() {
             section.innerHTML = `<h2>${escapeHtml(panel.title ?? panel.id)}</h2><div class="panel-body"></div>`;
             host.appendChild(section);
         }
-        const body = section.querySelector(".panel-body");
+        const body = section.querySelector<HTMLElement>(".panel-body");
         const owner = plugins.entries.find((e) => e.plugin?.name === panel.plugin)?.plugin;
-        if (owner !== undefined) plugins.guard(owner, () => panel.render(body, pluginApi()));
+        if (owner && body !== null) {
+            plugins.guard(owner, () => panel.render(body, pluginApi()));
+        }
     }
 }
 
@@ -703,18 +758,18 @@ function renderPluginPanels() {
 // Playback Control
 // ============================================================
 
-function seek(index) {
+function seek(index: number): void {
     if (view.timeline === null) return;
     view.index = Math.max(0, Math.min(index, view.timeline.length - 1));
     view.state = stateAt(view.timeline, view.index);
     render();
 }
 
-function step(delta) {
+function step(delta: number): void {
     seek(view.index + delta);
 }
 
-function setPlaying(playing) {
+function setPlaying(playing: boolean): void {
     view.playing = playing && view.timeline !== null;
     $("btn-play").textContent = view.playing ? "⏸" : "▶";
     if (view.playing) {
@@ -723,8 +778,8 @@ function setPlaying(playing) {
     }
 }
 
-function tickLoop(now) {
-    if (!view.playing) return;
+function tickLoop(now: number): void {
+    if (!view.playing || view.timeline === null) return;
     const speed = Number($input("speed").value);
     const interval = 1000 / (10 * speed);
     if (now - view.lastStep >= interval) {
@@ -743,7 +798,7 @@ function tickLoop(now) {
 // Replay List
 // ============================================================
 
-async function loadReplayList() {
+async function loadReplayList(): Promise<void> {
     const el = $("replay-list");
     try {
         const res = await fetch("/api/replays");
@@ -753,13 +808,15 @@ async function loadReplayList() {
             return;
         }
         el.innerHTML = data.replays.map(renderReplayItem).join("");
-        for (const raw of el.querySelectorAll(".match")) {
-            const btn = /** @type {HTMLElement} */ (raw);
-            btn.addEventListener("click", async () => {
+        for (const raw of el.querySelectorAll<HTMLElement>(".match")) {
+            raw.addEventListener("click", async () => {
                 for (const other of el.querySelectorAll(".match")) other.classList.remove("active");
-                btn.classList.add("active");
-                const res = await fetch(`/replays/${encodeURIComponent(btn.dataset.file)}`);
-                acceptDocument(await res.json(), btn.dataset.file);
+                raw.classList.add("active");
+                const file = raw.dataset.file;
+                if (file) {
+                    const res = await fetch(`/replays/${encodeURIComponent(file)}`);
+                    acceptDocument(await res.json(), file);
+                }
             });
         }
     } catch {
@@ -767,7 +824,7 @@ async function loadReplayList() {
     }
 }
 
-function renderReplayItem(r) {
+function renderReplayItem(r: any): string {
     const fileEscaped = escapeHtml(r.file);
     const sizeKb = (r.bytes / 1024).toFixed(0);
 
@@ -781,7 +838,7 @@ function renderReplayItem(r) {
     }
 
     const m = r.meta;
-    const players = m.players;
+    const players: PlayerInfo[] = m.players;
     const isDraw = m.result?.draw === true;
     const winnerIdx = isDraw ? null : (m.result?.winner ?? null);
 
@@ -814,7 +871,7 @@ function renderReplayItem(r) {
         </button>`;
 }
 
-async function loadPlugins() {
+async function loadPlugins(): Promise<void> {
     const wanted = pluginsFromQuery(location.search);
     try {
         const res = await fetch("/api/plugins");
@@ -831,7 +888,7 @@ async function loadPlugins() {
 // Event Handling
 // ============================================================
 
-function setupEvents() {
+function setupEvents(): void {
     $("btn-first").addEventListener("click", () => seek(0));
     $("btn-last").addEventListener("click", () => seek(view.timeline ? view.timeline.length - 1 : 0));
     $("btn-back1").addEventListener("click", () => step(-1));
@@ -892,13 +949,15 @@ function setupEvents() {
         const rect = board.getBoundingClientRect();
         const x = Math.floor(((e.clientX - rect.left) / rect.width) * view.timeline.width);
         const y = Math.floor(((e.clientY - rect.top) / rect.height) * view.timeline.height);
-        let best = null;
+        let best: string | null = null;
         let bestDist = Infinity;
-        for (const c of view.state.creeps.values()) {
-            const d = (c.x - x) ** 2 + (c.y - y) ** 2;
-            if (d < bestDist) {
-                best = c.id;
-                bestDist = d;
+        if (view.state) {
+            for (const c of view.state.creeps.values()) {
+                const d = (c.x - x) ** 2 + (c.y - y) ** 2;
+                if (d < bestDist) {
+                    best = c.id;
+                    bestDist = d;
+                }
             }
         }
         view.selected = bestDist <= 4 ? best : null;
@@ -935,7 +994,7 @@ function setupEvents() {
     for (const type of ["dragover", "drop"]) {
         wrap.addEventListener(type, (e) => e.preventDefault());
     }
-    wrap.addEventListener("drop", async (e) => {
+    wrap.addEventListener("drop", async (e: DragEvent) => {
         const file = e.dataTransfer?.files?.[0];
         if (file !== undefined) acceptDocument(await readReplayFile(file), file.name);
     });
@@ -943,13 +1002,14 @@ function setupEvents() {
     window.addEventListener("resize", resizeBoard);
 }
 
-plugins.onError = (id, message) => {
+plugins.onError = (id: string, message: string): void => {
     console.warn(`[plugin] ${id}: ${message}`);
     if (view.timeline !== null) {
         renderPluginList();
         renderLegend();
     }
 };
+
 setupEvents();
 await loadPlugins();
 await loadReplayList();

@@ -23,12 +23,27 @@
 
 import { encodeTerrain } from "./terrain.js";
 import { indexExtensions, splitLogLine } from "./extensions.js";
+import type {
+    MatchResult,
+    Normalizer,
+    NormalizerInit,
+    PlayerInfo,
+    ReplayDoc,
+    ReplayObject,
+    ReplayTick,
+    TickActionTuple,
+    TickBirthTuple,
+    TickBodyTuple,
+    TickOwnerTuple,
+    TickStructTuple,
+    TickUpdateTuple,
+} from "./types.js";
 
 export const REPLAY_FORMAT = "screeps-arena-replay";
 export const REPLAY_VERSION = 1;
 
 /** Body part name to single-character code. See `docs/FORMAT.md`. */
-const PART_CODE = {
+const PART_CODE: Record<string, string> = {
     move: "m",
     work: "w",
     carry: "c",
@@ -43,7 +58,7 @@ const PART_CODE = {
  *
  * Uppercase letters represent target/incoming actions (e.g. attacked, healed).
  */
-const ACTION_CODE = {
+const ACTION_CODE: Record<string, string> = {
     attack: "a",
     rangedAttack: "r",
     rangedMassAttack: "R",
@@ -54,12 +69,13 @@ const ACTION_CODE = {
 };
 
 /** Normalize raw `_id` values to strings across numeric, string, and flag name IDs. */
-const idOf = (o) => String(o._id);
+const idOf = (o: any): string => String(o._id);
 
 /** Extract energy value from store. */
-const energyOf = (o) => (o.store && typeof o.store.energy === "number" ? o.store.energy : 0);
+const energyOf = (o: any): number =>
+    o.store && typeof o.store.energy === "number" ? o.store.energy : 0;
 
-const energyCapOf = (o) =>
+const energyCapOf = (o: any): number =>
     o.storeCapacityResource && typeof o.storeCapacityResource.energy === "number"
         ? o.storeCapacityResource.energy
         : 0;
@@ -67,10 +83,10 @@ const energyCapOf = (o) =>
 /**
  * Encode body array into an order-preserving run-length string: `[move, move, attack]` → `"m2a1"`.
  *
- * @param {ReadonlyArray<{ type: string }>} body
- * @returns {string}
+ * @param body
+ * @returns Encoded body string
  */
-export function encodeBody(body) {
+export function encodeBody(body?: ReadonlyArray<{ type: string }>): string {
     if (!Array.isArray(body)) return "";
     let out = "";
     let cur = "";
@@ -95,30 +111,38 @@ export function encodeBody(body) {
  * Resolves player slot ordering (`player1` / `player2`) using `usersCode` and `firstPlayerIndex`
  * matching official game client behavior (`getGamePlayers`).
  *
- * @param {any} gameData
- * @returns {{ players: any[], result: any, arenaId: string | null, ticksLimit: number | null, createdAt: string | null }}
+ * @param gameData
+ * @returns Metadata object
  */
-export function readGameMeta(gameData) {
+export function readGameMeta(gameData: any): {
+    players: PlayerInfo[];
+    result: MatchResult;
+    arenaId: string | null;
+    ticksLimit: number | null;
+    createdAt: string | null;
+} {
     const outer = gameData?.game ?? {};
     const inner = outer.game ?? {};
 
-    const users = Array.isArray(outer.users) ? outer.users : [];
-    const codes = Array.isArray(outer.codes) ? outer.codes : [];
-    const usersCode = Array.isArray(inner.usersCode) ? inner.usersCode : [];
-    const colors = Array.isArray(inner.playerColor) ? inner.playerColor : [];
+    const users: any[] = Array.isArray(outer.users) ? outer.users : [];
+    const codes: any[] = Array.isArray(outer.codes) ? outer.codes : [];
+    const usersCode: string[] = Array.isArray(inner.usersCode) ? inner.usersCode : [];
+    const colors: string[] = Array.isArray(inner.playerColor) ? inner.playerColor : [];
     const firstPlayerIndex = Number(inner.firstPlayerIndex) || 0;
 
-    const userById = new Map(users.map((u) => [u._id, u]));
-    const codeById = new Map(codes.map((c) => [c._id, c]));
+    const userById = new Map<string, any>(users.map((u) => [u._id, u]));
+    const codeById = new Map<string, any>(codes.map((c) => [c._id, c]));
 
     // When firstPlayerIndex is 1, board slots (player1, player2) invert to [usersCode[1], usersCode[0]]
     const slotCodeIds = [...usersCode];
     if (firstPlayerIndex === 1 && slotCodeIds.length >= 2) {
-        [slotCodeIds[0], slotCodeIds[1]] = [slotCodeIds[1], slotCodeIds[0]];
+        const temp = slotCodeIds[0];
+        slotCodeIds[0] = slotCodeIds[1];
+        slotCodeIds[1] = temp;
     }
 
     const slots = Math.max(slotCodeIds.length, users.length, 2);
-    const players = [];
+    const players: PlayerInfo[] = [];
     for (let i = 0; i < slots; i++) {
         const code = codeById.get(slotCodeIds[i]);
         const fallbackUser =
@@ -157,12 +181,14 @@ export function readGameMeta(gameData) {
  *   - 0: usersCode[1] won
  *   - 0.5: Draw
  */
-function readResult(result, players, firstPlayerIndex = 0) {
-    if (!result || typeof result !== "object") return { winner: null, draw: false, raw: null };
+function readResult(result: any, players: PlayerInfo[], firstPlayerIndex = 0): MatchResult {
+    if (!result || typeof result !== "object") return { winner: null, winnerName: null, draw: false, raw: null };
     const raw = result.winner;
-    if (typeof raw !== "number") return { winner: null, draw: false, status: result.status ?? null, raw: raw ?? null };
+    if (typeof raw !== "number") {
+        return { winner: null, winnerName: null, draw: false, status: result.status ?? null, raw: raw ?? null };
+    }
     if (!Number.isInteger(raw)) {
-        return { winner: null, draw: true, status: result.status ?? null, raw };
+        return { winner: null, winnerName: null, draw: true, status: result.status ?? null, raw };
     }
 
     const codeWinnerIndex = raw === 1 ? 0 : 1;
@@ -188,9 +214,9 @@ function readResult(result, players, firstPlayerIndex = 0) {
  * const doc = n.finish();
  * ```
  *
- * @param {{ gameData?: any, shortId?: string | null, gameId?: string | null, fetchedAt?: string | null }} init
+ * @param init
  */
-export function createNormalizer(init = {}) {
+export function createNormalizer(init: NormalizerInit = {}): Normalizer {
     const meta = readGameMeta(init.gameData);
     const inner = init.gameData?.game?.game ?? {};
 
@@ -200,24 +226,27 @@ export function createNormalizer(init = {}) {
     const height = side > 0 ? side : 0;
 
     /** Static objects (non-creep) stored once upon introduction. */
-    const objects = new Map();
+    const objects = new Map<string, ReplayObject>();
     /** Mutable structure state to calculate deltas against. */
-    const structState = new Map();
+    const structState = new Map<string, { hits: number; energy: number; side: number | null }>();
     /** Mutable creep state. */
-    const creepState = new Map();
+    const creepState = new Map<
+        string,
+        { x: number; y: number; hits: number; fatigue: number; spawning: number; body: string }
+    >();
     /** Output tick deltas. */
-    const ticks = [];
+    const ticks: ReplayTick[] = [];
     /** Guard against duplicate ticks across chunk boundaries. */
-    const seen = new Set();
+    const seen = new Set<number>();
     /** Tick to console log text. */
-    const logs = {};
+    const logs: Record<string, string> = {};
     /** Tick to metadata parsed by splitLogLine. */
-    const extByTick = new Map();
+    const extByTick = new Map<number, Record<string, unknown[]>>();
 
     let lastTick = -1;
     let maxTick = 0;
 
-    const sideOf = (user) => {
+    const sideOf = (user: any): number | null => {
         if (user === undefined || user === null) return null;
         const m = /^player(\d+)$/.exec(String(user));
         if (m !== null) return Number(m[1]) - 1;
@@ -227,9 +256,9 @@ export function createNormalizer(init = {}) {
 
     /**
      * Fold 1 full frame snapshot into deltas.
-     * @param {any} frame
+     * @param frame
      */
-    function pushFrame(frame) {
+    function pushFrame(frame: any): void {
         const k = frame?.gameTime;
         if (typeof k !== "number" || seen.has(k)) return;
         seen.add(k);
@@ -239,14 +268,14 @@ export function createNormalizer(init = {}) {
         lastTick = k;
         if (k > maxTick) maxTick = k;
 
-        const births = [];
-        const updates = [];
-        const bodies = [];
-        const actions = [];
-        const structDeltas = [];
-        const ownerDeltas = [];
-        const aliveCreeps = new Set();
-        const aliveStructs = new Set();
+        const births: TickBirthTuple[] = [];
+        const updates: TickUpdateTuple[] = [];
+        const bodies: TickBodyTuple[] = [];
+        const actions: TickActionTuple[] = [];
+        const structDeltas: TickStructTuple[] = [];
+        const ownerDeltas: TickOwnerTuple[] = [];
+        const aliveCreeps = new Set<string>();
+        const aliveStructs = new Set<string>();
 
         for (const o of frame.objects ?? []) {
             if (o.type === "creep") {
@@ -260,7 +289,7 @@ export function createNormalizer(init = {}) {
         }
 
         // Dead creeps
-        const dead = [];
+        const dead: string[] = [];
         for (const id of creepState.keys()) {
             if (!aliveCreeps.has(id)) dead.push(id);
         }
@@ -274,7 +303,7 @@ export function createNormalizer(init = {}) {
             structDeltas.push([id, 0, 0]);
         }
 
-        const tick = { k };
+        const tick: ReplayTick = { k };
         if (births.length > 0) tick.n = births;
         if (updates.length > 0) tick.u = updates;
         if (bodies.length > 0) tick.b = bodies;
@@ -285,7 +314,12 @@ export function createNormalizer(init = {}) {
         ticks.push(tick);
     }
 
-    function collectCreep(o, births, updates, bodies) {
+    function collectCreep(
+        o: any,
+        births: TickBirthTuple[],
+        updates: TickUpdateTuple[],
+        bodies: TickBodyTuple[],
+    ): void {
         const id = idOf(o);
         const body = encodeBody(o.body);
         const spawning = o.spawning ? 1 : 0;
@@ -297,7 +331,13 @@ export function createNormalizer(init = {}) {
             creepState.set(id, { x: o.x, y: o.y, hits: o.hits, fatigue, spawning, body });
             return;
         }
-        if (prev.x !== o.x || prev.y !== o.y || prev.hits !== o.hits || prev.fatigue !== fatigue || prev.spawning !== spawning) {
+        if (
+            prev.x !== o.x ||
+            prev.y !== o.y ||
+            prev.hits !== o.hits ||
+            prev.fatigue !== fatigue ||
+            prev.spawning !== spawning
+        ) {
             updates.push([id, o.x, o.y, o.hits, fatigue, spawning]);
             prev.x = o.x;
             prev.y = o.y;
@@ -311,12 +351,16 @@ export function createNormalizer(init = {}) {
         }
     }
 
-    function collectStructure(o, structDeltas, ownerDeltas) {
+    function collectStructure(
+        o: any,
+        structDeltas: TickStructTuple[],
+        ownerDeltas: TickOwnerTuple[],
+    ): void {
         const id = idOf(o);
         const side = sideOf(o.user);
         const hits = typeof o.hits === "number" ? o.hits : 0;
         const energy = energyOf(o);
-        let st = structState.get(id);
+        const st = structState.get(id);
 
         if (st === undefined) {
             objects.set(id, {
@@ -345,15 +389,15 @@ export function createNormalizer(init = {}) {
         }
     }
 
-    function collectActions(o, actions) {
+    function collectActions(o: any, actions: TickActionTuple[]): void {
         const log = o.actionLog;
         if (!log) return;
         const id = idOf(o);
         for (const [name, value] of Object.entries(log)) {
             if (value === null || value === undefined) continue;
             const code = ACTION_CODE[name] ?? name;
-            if (typeof value === "object" && typeof value.x === "number") {
-                actions.push([id, code, value.x, value.y]);
+            if (typeof value === "object" && typeof (value as any).x === "number") {
+                actions.push([id, code, (value as any).x, (value as any).y]);
             } else {
                 actions.push([id, code]);
             }
@@ -361,8 +405,8 @@ export function createNormalizer(init = {}) {
     }
 
     return {
-        /** @param {ReadonlyArray<any>} frames Frames in tick order for 1 chunk */
-        pushFrames(frames) {
+        /** Frames in tick order for 1 chunk */
+        pushFrames(frames: ReadonlyArray<any>): void {
             if (!Array.isArray(frames)) return;
             for (const frame of frames) pushFrame(frame);
         },
@@ -370,9 +414,9 @@ export function createNormalizer(init = {}) {
         /**
          * Incorporate a log chunk (`{ "<tick>": "<text>" }`).
          * Failed chunks (`{ status: 404 }`) are ignored.
-         * @param {any} chunk
+         * @param chunk
          */
-        pushLogs(chunk) {
+        pushLogs(chunk: any): void {
             if (!chunk || typeof chunk !== "object" || typeof chunk.status === "number") return;
             for (const [tick, text] of Object.entries(chunk)) {
                 if (typeof text !== "string" || text === "") continue;
@@ -382,8 +426,8 @@ export function createNormalizer(init = {}) {
             }
         },
 
-        /** @returns {any} Normalized replay document */
-        finish() {
+        /** Normalized replay document */
+        finish(): ReplayDoc {
             for (const tick of ticks) {
                 const ext = extByTick.get(tick.k);
                 if (ext !== undefined) tick.e = ext;
@@ -418,10 +462,10 @@ export function createNormalizer(init = {}) {
 /**
  * Normalize a complete raw match dump object.
  *
- * @param {any} raw
- * @param {{ shortId?: string | null }} [options]
+ * @param raw
+ * @param options
  */
-export function normalizeMatch(raw, options = {}) {
+export function normalizeMatch(raw: any, options: { shortId?: string | null } = {}): ReplayDoc {
     if (!raw || typeof raw !== "object" || !raw.replays) {
         throw new Error("not a raw replay JSON (missing replays property)");
     }
@@ -433,7 +477,7 @@ export function normalizeMatch(raw, options = {}) {
     });
     const chunks = Object.keys(raw.replays)
         .map(Number)
-        .filter((n) => Number.isFinite(n))
+        .filter((num) => Number.isFinite(num))
         .sort((a, b) => a - b);
     for (const c of chunks) {
         n.pushFrames(raw.replays[String(c)]);

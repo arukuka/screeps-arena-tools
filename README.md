@@ -89,7 +89,7 @@ Actual measurements (`XTTCQ7DA4T`, 2000 ticks):
 
 Most of the board remains static during a game. By storing static properties only once upon introduction and recording only modifications per tick, file sizes shrink by over two orders of magnitude.
 
-The conversion is **lossless**. All 2001 ticks and 696,435 entities have been verified against raw snapshots with zero differences (tested in `test/normalize.test.js`).
+The conversion is **lossless**. All 2001 ticks and 696,435 entities have been verified against raw snapshots with zero differences (tested in `test/normalize.test.ts`).
 
 For format details, see [`docs/FORMAT.md`](docs/FORMAT.md).
 
@@ -148,13 +148,13 @@ arena-tools view --plugins ~/my-bot/arena-plugins
 ```
 
 For logs without `@zones` (e.g. opponents' or other players' games), the plugin automatically sleeps.
-See [`docs/PLUGINS.md`](docs/PLUGINS.md) for the guide and [`examples/plugins/macro-zones.js`](examples/plugins/macro-zones.js) for a working example.
+See [`docs/PLUGINS.md`](docs/PLUGINS.md) for the guide and [`examples/plugins/macro-zones.ts`](examples/plugins/macro-zones.ts) for a working example.
 
 ---
 
 ## Library Usage
 
-```js
+```ts
 import { normalizeMatch, buildTimeline, stateAt } from "screeps-arena-tools";
 
 const doc = normalizeMatch(JSON.parse(raw));
@@ -171,11 +171,10 @@ for (const creep of state.creeps.values()) {
 ## Development
 
 ```bash
-npm test          # node --test (uses real match fixtures)
-npm run typecheck # Check JSDoc type annotations via tsc
+npm run build     # Compile TypeScript (tsc) to dist/
+npm run typecheck # Run TypeScript compiler in typecheck-only mode
+npm test          # Build and run node --test (uses real match fixtures)
 ```
-
-JavaScript files in `src/` are imported directly by both Node.js and the browser viewer. There is no build step so logic is never duplicated.
 
 ---
 

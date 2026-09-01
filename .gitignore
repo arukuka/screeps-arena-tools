@@ -5,4 +5,5 @@ node_modules/
 # 手元だけで使うプラグインの置き場
 /plugins/
 .DS_Store
+dist/
 *.tsbuildinfo

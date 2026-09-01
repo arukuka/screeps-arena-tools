@@ -31,11 +31,13 @@
  * In matches without `@zones`, this plugin automatically sleeps.
  */
 
+import type { ArenaPlugin, PluginApi } from "../../src/types.js";
+
 const ZONE_NAMES = ["DEFENSE", "CENTER", "ASSAULT"];
 const ZONE_COLOR = ["#8ee0ff", "#ffd166", "#ff5d8f"];
 
 /** Metadata is always an array; extract the latest entry. */
-const latest = (ext, ns) => {
+const latest = (ext: Record<string, unknown[]> | null | undefined, ns: string): any => {
     const values = ext?.[ns];
     return Array.isArray(values) && values.length > 0 ? values[values.length - 1] : null;
 };
@@ -43,7 +45,7 @@ const latest = (ext, ns) => {
 /**
  * Look backward for recent metadata if not present on the exact current tick.
  */
-function lookback(api, ns, maxBack = 200) {
+function lookback(api: PluginApi, ns: string, maxBack = 200): any {
     for (let k = api.tick; k >= Math.max(0, api.tick - maxBack); k--) {
         const found = latest(api.extAt(k), ns);
         if (found !== null) return found;
@@ -51,7 +53,7 @@ function lookback(api, ns, maxBack = 200) {
     return null;
 }
 
-export default {
+const plugin: ArenaPlugin = {
     name: "macro-zones",
 
     // Automatically disabled if neither namespace appears in logs
@@ -62,7 +64,7 @@ export default {
     legend: ZONE_NAMES.map((label, i) => ({ color: ZONE_COLOR[i], label })),
 
     /** Render creep zone assignments as colored outer rings */
-    drawOverlay(api) {
+    drawOverlay(api: PluginApi): void {
         if (!api.isToggled("macro-zones")) return;
         const assign = lookback(api, "creepZone");
         if (assign === null) return;
@@ -83,18 +85,19 @@ export default {
         {
             id: "macro-zones",
             title: "Macro Zone Allocation",
-            render(el, api) {
+            render(el: HTMLElement, api: PluginApi): void {
                 const zones = lookback(api, "zones");
                 if (zones === null) {
                     el.innerHTML = '<p class="hint">No @zones before this tick</p>';
                     return;
                 }
                 el.innerHTML = Object.entries(zones)
-                    .map(([side, ratios]) => {
-                        const total = ratios.reduce((a, b) => a + b, 0) || 1;
+                    .map(([side, ratios]: [string, any]) => {
+                        const ratioArr = Array.isArray(ratios) ? ratios : [];
+                        const total = ratioArr.reduce((a: number, b: number) => a + b, 0) || 1;
                         const name = api.doc.meta.players[Number(side)]?.username ?? `side ${side}`;
-                        const bars = ratios
-                            .map((v, i) => {
+                        const bars = ratioArr
+                            .map((v: number, i: number) => {
                                 const pct = ((v / total) * 100).toFixed(0);
                                 return `<div style="display:grid;grid-template-columns:62px 1fr 42px;gap:2px 6px;align-items:center">
                                     <span style="color:${ZONE_COLOR[i]}">${ZONE_NAMES[i] ?? i}</span>
@@ -110,3 +113,5 @@ export default {
         },
     ],
 };
+
+export default plugin;

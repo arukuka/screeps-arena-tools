@@ -8,25 +8,35 @@
         "node": ">=20"
     },
     "bin": {
-        "arena-tools": "src/cli.js"
+        "arena-tools": "dist/src/cli.js"
     },
     "exports": {
-        ".": "./src/index.js",
-        "./normalize": "./src/normalize.js",
-        "./timeline": "./src/timeline.js"
+        ".": {
+            "types": "./dist/src/index.d.ts",
+            "import": "./dist/src/index.js"
+        },
+        "./normalize": {
+            "types": "./dist/src/normalize.d.ts",
+            "import": "./dist/src/normalize.js"
+        },
+        "./timeline": {
+            "types": "./dist/src/timeline.d.ts",
+            "import": "./dist/src/timeline.js"
+        }
     },
     "files": [
-        "src",
+        "dist",
         "viewer",
         "examples",
         "docs",
         "README.md"
     ],
     "scripts": {
-        "test": "node --test test/*.test.js",
-        "typecheck": "tsc --noEmit -p jsconfig.json",
-        "view": "node src/cli.js view",
-        "fetch": "node src/cli.js fetch"
+        "build": "tsc",
+        "typecheck": "tsc --noEmit",
+        "test": "npm run build && node --test dist/test/*.test.js",
+        "view": "npm run build && node dist/src/cli.js view",
+        "fetch": "npm run build && node dist/src/cli.js fetch"
     },
     "keywords": [
         "screeps",

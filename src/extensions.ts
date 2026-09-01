@@ -34,6 +34,8 @@
  * Values are always stored as arrays (even single occurrences) for consistent consumption.
  */
 
+import type { ExtensionIndex } from "./types.js";
+
 /** Metadata line regex pattern capturing leading `@` and namespace. */
 const META_LINE_RE = /^@([A-Za-z0-9_.:-]+)(?:\s+([\s\S]*))?$/;
 
@@ -43,17 +45,16 @@ const META_LINE_RE = /^@([A-Za-z0-9_.:-]+)(?:\s+([\s\S]*))?$/;
  * Metadata lines are removed from the plain log text so high-frequency
  * telemetry does not flood the human-readable log viewer.
  *
- * @param {string} text Console output for 1 tick (newline separated)
- * @returns {{ log: string, ext: Record<string, unknown[]> | null }}
+ * @param text Console output for 1 tick (newline separated)
+ * @returns Split log object
  */
-export function splitLogLine(text) {
+export function splitLogLine(text: string): { log: string; ext: Record<string, unknown[]> | null } {
     if (typeof text !== "string" || text === "") return { log: "", ext: null };
     // Fast return if no metadata indicator exists
     if (!text.includes("@")) return { log: text, ext: null };
 
-    const plain = [];
-    /** @type {Record<string, unknown[]>} */
-    const ext = {};
+    const plain: string[] = [];
+    const ext: Record<string, unknown[]> = {};
     let found = false;
 
     for (const line of text.split("\n")) {
@@ -73,10 +74,10 @@ export function splitLogLine(text) {
 /**
  * Parse payload as JSON if possible; otherwise return as raw string.
  *
- * @param {string | undefined} raw
- * @returns {unknown}
+ * @param raw
+ * @returns Parsed payload
  */
-function parsePayload(raw) {
+function parsePayload(raw: string | undefined): unknown {
     if (raw === undefined) return true; // Flag marker without payload (e.g. `@flagCaptured`)
     const text = raw.trim();
     if (text === "") return true;
@@ -92,12 +93,13 @@ function parsePayload(raw) {
  *
  * Used by the viewer to determine which plugins can activate for a match.
  *
- * @param {ReadonlyArray<{ k: number, e?: Record<string, unknown[]> }>} ticks
- * @returns {Record<string, { count: number, firstTick: number, lastTick: number }>}
+ * @param ticks
+ * @returns Extension index mapping namespace to metadata stats
  */
-export function indexExtensions(ticks) {
-    /** @type {Record<string, { count: number, firstTick: number, lastTick: number }>} */
-    const index = {};
+export function indexExtensions(
+    ticks: ReadonlyArray<{ k: number; e?: Record<string, unknown[]> }>,
+): ExtensionIndex {
+    const index: ExtensionIndex = {};
     for (const tick of ticks) {
         if (!tick.e) continue;
         for (const [ns, values] of Object.entries(tick.e)) {

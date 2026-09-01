@@ -1,11 +1,14 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 
 import { listReplays, resolveServeOptions, safeJoin } from "../src/serve.js";
 
-const ROOT = fileURLToPath(new URL("..", import.meta.url));
+const CURRENT_DIR = dirname(fileURLToPath(import.meta.url));
+const ROOT = CURRENT_DIR.endsWith("dist/test") || CURRENT_DIR.endsWith("dist\\test")
+    ? resolve(CURRENT_DIR, "../..")
+    : resolve(CURRENT_DIR, "..");
 
 test("allows paths within root directory", () => {
     assert.equal(safeJoin("/srv/viewer", "/app.js"), "/srv/viewer/app.js");
@@ -44,12 +47,12 @@ test("extracts player, version, and result metadata in replay listing", () => {
     assert.ok(item);
     assert.ok(item.meta);
     assert.equal(item.meta.shortId, "XTTCQ7DA4T");
-    assert.equal(item.meta.players.length, 2);
-    assert.equal(item.meta.players[0].username, "arukuka");
-    assert.equal(item.meta.players[0].codeVersion, 17);
-    assert.equal(item.meta.players[1].username, "Opponent");
-    assert.equal(item.meta.players[1].codeVersion, 21);
-    assert.equal(item.meta.result.draw, true);
+    assert.equal(item.meta.players?.length, 2);
+    assert.equal(item.meta.players?.[0]?.username, "arukuka");
+    assert.equal(item.meta.players?.[0]?.codeVersion, 17);
+    assert.equal(item.meta.players?.[1]?.username, "Opponent");
+    assert.equal(item.meta.players?.[1]?.codeVersion, 21);
+    assert.equal(item.meta.result?.draw, true);
 });
 
 test("resolves default serve options", () => {

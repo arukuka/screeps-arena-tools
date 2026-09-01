@@ -10,9 +10,10 @@ import { gunzipSync, gzipSync } from "node:zlib";
 import { readFileSync, writeFileSync } from "node:fs";
 
 import { REPLAY_FORMAT } from "./normalize.js";
+import type { PlayerInfo, ReplayDoc } from "./types.js";
 
 /** Read either a plain `*.json` or compressed `*.json.gz` replay file. */
-export function readReplay(path) {
+export function readReplay(path: string): any {
     const raw = readFileSync(path);
     const text = path.endsWith(".gz") ? gunzipSync(raw).toString("utf-8") : raw.toString("utf-8");
     return JSON.parse(text);
@@ -20,9 +21,9 @@ export function readReplay(path) {
 
 /**
  * Write a replay document. Compresses with gzip if the file ends with `.gz`.
- * @returns {number} Bytes written
+ * @returns Bytes written
  */
-export function writeReplay(path, doc) {
+export function writeReplay(path: string, doc: unknown): number {
     const json = JSON.stringify(doc);
     const body = path.endsWith(".gz") ? gzipSync(Buffer.from(json, "utf-8"), { level: 9 }) : Buffer.from(json, "utf-8");
     writeFileSync(path, body);
@@ -30,13 +31,13 @@ export function writeReplay(path, doc) {
 }
 
 /** Check whether an object is a normalized replay document. */
-export function isReplayDoc(value) {
-    return Boolean(value) && typeof value === "object" && value.format === REPLAY_FORMAT;
+export function isReplayDoc(value: unknown): value is ReplayDoc {
+    return Boolean(value) && typeof value === "object" && (value as any).format === REPLAY_FORMAT;
 }
 
 /** Format a single-line summary of a match document for CLI output. */
-export function describeReplay(doc) {
-    const formatPlayer = (p) => {
+export function describeReplay(doc: ReplayDoc): string {
+    const formatPlayer = (p: PlayerInfo): string => {
         const name = p.username ?? p.slot;
         return p.codeVersion !== null && p.codeVersion !== undefined ? `${name} (v${p.codeVersion})` : name;
     };

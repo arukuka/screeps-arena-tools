@@ -7,12 +7,20 @@
  */
 
 import { decodeTerrain } from "./terrain.js";
+import type {
+    BoardState,
+    BodyPartInfo,
+    ReplayDoc,
+    ReplayTick,
+    SideStats,
+    Timeline,
+} from "./types.js";
 
 /** Keyframe interval (in ticks). */
 export const KEYFRAME_STRIDE = 100;
 
 /** Body run-length code to part name. */
-export const PART_NAME = {
+export const PART_NAME: Record<string, string> = {
     m: "move",
     w: "work",
     c: "carry",
@@ -23,7 +31,7 @@ export const PART_NAME = {
 };
 
 /** Action single-character code to full name. */
-export const ACTION_NAME = {
+export const ACTION_NAME: Record<string, string> = {
     a: "attack",
     r: "rangedAttack",
     R: "rangedMassAttack",
@@ -34,16 +42,16 @@ export const ACTION_NAME = {
 };
 
 /** Incoming action codes (recorded on target entity). */
-export const INCOMING_ACTIONS = new Set(["A", "E"]);
+export const INCOMING_ACTIONS = new Set<string>(["A", "E"]);
 
 /**
  * Parse `"m2a1"` into `[{ code: "m", name: "move", count: 2 }, ...]`.
- * @param {string} body
+ * @param body
  */
-export function parseBody(body) {
-    const out = [];
+export function parseBody(body?: string): BodyPartInfo[] {
+    const out: BodyPartInfo[] = [];
     const re = /([a-z?])(\d+)/g;
-    let m;
+    let m: RegExpExecArray | null;
     while ((m = re.exec(body ?? "")) !== null) {
         out.push({ code: m[1], name: PART_NAME[m[1]] ?? m[1], count: Number(m[2]) });
     }
@@ -51,21 +59,21 @@ export function parseBody(body) {
 }
 
 /** Total number of parts in a body string. */
-export function bodySize(body) {
+export function bodySize(body?: string): number {
     let total = 0;
     for (const part of parseBody(body)) total += part.count;
     return total;
 }
 
 /** Part counts grouped by type (e.g. `{ move: 3, attack: 2 }`). */
-export function bodyCounts(body) {
-    const counts = {};
+export function bodyCounts(body?: string): Record<string, number> {
+    const counts: Record<string, number> = {};
     for (const part of parseBody(body)) counts[part.name] = (counts[part.name] ?? 0) + part.count;
     return counts;
 }
 
 /** Create an empty board state. */
-function emptyState() {
+function emptyState(): BoardState {
     return {
         tick: 0,
         creeps: new Map(),
@@ -76,22 +84,23 @@ function emptyState() {
 }
 
 /** Deep clone a state object for keyframing. */
-function cloneState(state) {
+function cloneState(state: BoardState): BoardState {
     return {
         tick: state.tick,
         creeps: new Map([...state.creeps].map(([k, v]) => [k, { ...v }])),
         struct: new Map([...state.struct].map(([k, v]) => [k, { ...v }])),
         owner: new Map(state.owner),
-        actions: state.actions,
+        actions: [...state.actions],
+        ext: state.ext ? { ...state.ext } : state.ext,
     };
 }
 
 /**
  * Apply 1 tick's delta changes to a state object.
- * @param {ReturnType<typeof emptyState>} state
- * @param {any} tick
+ * @param state
+ * @param tick
  */
-export function applyFrame(state, tick) {
+export function applyFrame(state: BoardState, tick: ReplayTick): BoardState {
     state.tick = tick.k;
 
     for (const [id, side, x, y, hits, hitsMax, body, spawning] of tick.n ?? []) {
@@ -123,9 +132,9 @@ export function applyFrame(state, tick) {
 /**
  * Build a timeline and keyframe index from a replay document.
  *
- * @param {any} doc Normalized replay document
+ * @param doc Normalized replay document
  */
-export function buildTimeline(doc) {
+export function buildTimeline(doc: ReplayDoc): Timeline {
     const { width, height } = doc.meta;
     const terrain = decodeTerrain(doc.terrain, width, height);
 
@@ -135,7 +144,7 @@ export function buildTimeline(doc) {
         base.owner.set(o.id, o.side);
     }
 
-    const keyframes = [cloneState(base)];
+    const keyframes: BoardState[] = [cloneState(base)];
     const state = cloneState(base);
     for (let i = 0; i < doc.ticks.length; i++) {
         applyFrame(state, doc.ticks[i]);
@@ -159,10 +168,10 @@ export function buildTimeline(doc) {
  *
  * Returns a freshly cloned state to prevent accidental mutations by callers.
  *
- * @param {ReturnType<typeof buildTimeline>} timeline
- * @param {number} index
+ * @param timeline
+ * @param index
  */
-export function stateAt(timeline, index) {
+export function stateAt(timeline: Timeline, index: number): BoardState {
     const clamped = Math.max(0, Math.min(index, timeline.length - 1));
     const kfIndex = Math.min(Math.floor((clamped + 1) / KEYFRAME_STRIDE), timeline.keyframes.length - 1);
     const state = cloneState(timeline.keyframes[kfIndex]);
@@ -174,11 +183,11 @@ export function stateAt(timeline, index) {
 /**
  * Aggregate summary statistics per side for charts and inspector panels.
  *
- * @param {ReturnType<typeof buildTimeline>} timeline
- * @param {ReturnType<typeof stateAt>} state
+ * @param timeline
+ * @param state
  */
-export function sideStats(timeline, state) {
-    const sides = timeline.doc.meta.players.map(() => ({
+export function sideStats(timeline: Timeline, state: BoardState): SideStats[] {
+    const sides: SideStats[] = timeline.doc.meta.players.map(() => ({
         creeps: 0,
         hits: 0,
         hitsMax: 0,
@@ -187,10 +196,20 @@ export function sideStats(timeline, state) {
         structures: 0,
         flags: 0,
     }));
-    const fallback = () => ({ creeps: 0, hits: 0, hitsMax: 0, parts: 0, energy: 0, structures: 0, flags: 0 });
+    const fallback = (): SideStats => ({
+        creeps: 0,
+        hits: 0,
+        hitsMax: 0,
+        parts: 0,
+        energy: 0,
+        structures: 0,
+        flags: 0,
+    });
 
     for (const c of state.creeps.values()) {
-        const s = sides[c.side] ?? (sides[c.side] = fallback());
+        const sideIdx = c.side ?? -1;
+        const s = (sideIdx >= 0 && sides[sideIdx]) ? sides[sideIdx] : fallback();
+        if (sideIdx >= 0 && !sides[sideIdx]) sides[sideIdx] = s;
         s.creeps++;
         s.hits += c.hits;
         s.hitsMax += c.hitsMax;

@@ -1,15 +1,20 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 
 import { createNormalizer, encodeBody, normalizeMatch, readGameMeta } from "../src/normalize.js";
 import { buildTimeline, bodySize, stateAt } from "../src/timeline.js";
 
-const fixture = (name) => fileURLToPath(new URL(`./fixtures/${name}`, import.meta.url));
+const CURRENT_DIR = dirname(fileURLToPath(import.meta.url));
+const ROOT = CURRENT_DIR.endsWith("dist/test") || CURRENT_DIR.endsWith("dist\\test")
+    ? resolve(CURRENT_DIR, "../..")
+    : resolve(CURRENT_DIR, "..");
+const fixture = (name: string): string => resolve(ROOT, "test/fixtures", name);
 
 /** First 9 ticks sliced from real match XTTCQ7DA4T (see `docs/FORMAT.md`). */
-const raw = JSON.parse(readFileSync(fixture("XTTCQ7DA4T.raw-slice.json"), "utf-8"));
+const raw: any = JSON.parse(readFileSync(fixture("XTTCQ7DA4T.raw-slice.json"), "utf-8"));
 
 test("encodes body parts into run-length string", () => {
     assert.equal(encodeBody([{ type: "move" }, { type: "move" }, { type: "attack" }]), "m2a1");
@@ -23,7 +28,7 @@ test("maps player1 / player2 slots to real usernames", () => {
         doc.meta.players.map((p) => p.username),
         ["arukuka", "Opponent"],
     );
-    assert.equal(doc.meta.players[0].slot, "player1");
+    assert.equal(doc.meta.players[0]?.slot, "player1");
 });
 
 test("inverts slots and winner correctly when firstPlayerIndex is 1", () => {
@@ -46,14 +51,14 @@ test("inverts slots and winner correctly when firstPlayerIndex is 1", () => {
         },
     };
     const meta = readGameMeta(mockGameData);
-    assert.equal(meta.players[0].username, "安兴");
-    assert.equal(meta.players[0].slot, "player1");
-    assert.equal(meta.players[0].side, 0);
-    assert.equal(meta.players[0].codeVersion, 46);
-    assert.equal(meta.players[1].username, "arukuka");
-    assert.equal(meta.players[1].slot, "player2");
-    assert.equal(meta.players[1].side, 1);
-    assert.equal(meta.players[1].codeVersion, 24);
+    assert.equal(meta.players[0]?.username, "安兴");
+    assert.equal(meta.players[0]?.slot, "player1");
+    assert.equal(meta.players[0]?.side, 0);
+    assert.equal(meta.players[0]?.codeVersion, 46);
+    assert.equal(meta.players[1]?.username, "arukuka");
+    assert.equal(meta.players[1]?.slot, "player2");
+    assert.equal(meta.players[1]?.side, 1);
+    assert.equal(meta.players[1]?.codeVersion, 24);
 
     assert.equal(meta.result.draw, false);
     assert.equal(meta.result.winner, 0);
@@ -81,8 +86,8 @@ test("resolves winner when firstPlayerIndex is 0", () => {
         },
     };
     const meta = readGameMeta(mockGameData);
-    assert.equal(meta.players[0].username, "arukuka");
-    assert.equal(meta.players[1].username, "Zeus");
+    assert.equal(meta.players[0]?.username, "arukuka");
+    assert.equal(meta.players[1]?.username, "Zeus");
 
     assert.equal(meta.result.winner, 0);
     assert.equal(meta.result.winnerName, "arukuka");
@@ -111,8 +116,9 @@ test("stores static objects once and keeps only deltas per tick", () => {
 test("attaches log metadata to corresponding ticks", () => {
     const doc = normalizeMatch(raw);
     const tick = doc.ticks.find((t) => t.k === 3);
-    assert.deepEqual(tick.e.zones, [{ 0: [3, 2, 1], 1: [1, 1, 4] }]);
-    assert.deepEqual(tick.e.mode, ["swarm"]);
+    assert.ok(tick !== undefined);
+    assert.deepEqual(tick.e?.zones, [{ 0: [3, 2, 1], 1: [1, 1, 4] }]);
+    assert.deepEqual(tick.e?.mode, ["swarm"]);
     assert.equal(doc.logs["3"], "hello from bot");
     assert.deepEqual(Object.keys(doc.extensions).sort(), ["mode", "zones"]);
 });
@@ -121,15 +127,16 @@ test("reconstructed board matches raw snapshots across all ticks", () => {
     const doc = normalizeMatch(raw);
     const timeline = buildTimeline(doc);
 
-    const rawFrames = new Map();
-    for (const chunk of Object.values(raw.replays)) {
+    const rawFrames = new Map<number, any>();
+    for (const chunk of Object.values(raw.replays as Record<string, any[]>)) {
         for (const frame of chunk) rawFrames.set(frame.gameTime, frame);
     }
 
     let compared = 0;
     for (let i = 0; i < doc.ticks.length; i++) {
         const state = stateAt(timeline, i);
-        const frame = rawFrames.get(doc.ticks[i].k);
+        const tickK = doc.ticks[i]?.k ?? -1;
+        const frame = rawFrames.get(tickK);
         assert.ok(frame !== undefined);
 
         for (const o of frame.objects) {
@@ -147,7 +154,7 @@ test("reconstructed board matches raw snapshots across all ticks", () => {
                 assert.equal(s.energy, o.store?.energy ?? 0);
             }
         }
-        assert.equal(state.creeps.size, frame.objects.filter((o) => o.type === "creep").length);
+        assert.equal(state.creeps.size, frame.objects.filter((o: any) => o.type === "creep").length);
     }
     assert.ok(compared > 3000, `too few objects compared: ${compared}`);
 });

@@ -8,6 +8,7 @@
 import { connect, enableInspector, findArenaPid, openMatchInApp, waitForInspector } from "./cdp.js";
 import { createNormalizer } from "./normalize.js";
 import { matchUrl } from "./arena_url.js";
+import type { FetchMatchOptions, ReplayDoc } from "./types.js";
 
 const API = "https://arena.screeps.com/api";
 
@@ -17,7 +18,7 @@ const CHUNK_SIZE = 100;
 /**
  * Expression evaluated in the renderer process to perform an authenticated fetch.
  */
-const fetchExpr = (url) => `
+const fetchExpr = (url: string): string => `
     (async () => {
         const res = await fetch(${JSON.stringify(url)});
         if (!res.ok) return { __error: true, status: res.status, statusText: res.statusText };
@@ -28,10 +29,10 @@ const fetchExpr = (url) => `
 /**
  * Fetch a match and return a normalized replay document.
  *
- * @param {string} shortId Normalized short ID
- * @param {{ onProgress?: (info: { phase: string, done?: number, total?: number, message?: string }) => void }} [options]
+ * @param shortId Normalized short ID
+ * @param options
  */
-export async function fetchMatch(shortId, options = {}) {
+export async function fetchMatch(shortId: string, options: FetchMatchOptions = {}): Promise<ReplayDoc> {
     const report = options.onProgress ?? (() => {});
 
     if (process.platform !== "darwin") {
@@ -62,7 +63,7 @@ export async function fetchMatch(shortId, options = {}) {
     try {
         // 1. Resolve short ID to real MongoDB ObjectId.
         //    The replay API requires the ObjectId and returns 502 for short IDs.
-        const gameData = await session.evaluateInRenderer(fetchExpr(`${API}/game/${shortId}`));
+        const gameData: any = await session.evaluateInRenderer(fetchExpr(`${API}/game/${shortId}`));
         if (!gameData || gameData.__error) {
             throw new Error(
                 `Cannot fetch match info (${gameData?.status ?? "?"} ${gameData?.statusText ?? ""}).\n` +
@@ -84,16 +85,16 @@ export async function fetchMatch(shortId, options = {}) {
         });
 
         // 2. Chunk boundaries: tick 0 is initial state, followed by 100-tick chunks.
-        const targets = [0];
+        const targets: number[] = [0];
         for (let t = CHUNK_SIZE; t < totalTicks; t += CHUNK_SIZE) targets.push(t);
         if (totalTicks > 0 && targets[targets.length - 1] !== totalTicks) targets.push(totalTicks);
 
         for (let i = 0; i < targets.length; i++) {
             const t = targets[i];
-            const frames = await session.evaluateInRenderer(fetchExpr(`${API}/game/${gameId}/replay/${t}`));
+            const frames: any = await session.evaluateInRenderer(fetchExpr(`${API}/game/${gameId}/replay/${t}`));
             if (Array.isArray(frames)) normalizer.pushFrames(frames);
 
-            const logs = await session.evaluateInRenderer(fetchExpr(`${API}/game/${gameId}/log/${t}`));
+            const logs: any = await session.evaluateInRenderer(fetchExpr(`${API}/game/${gameId}/log/${t}`));
             if (logs && !logs.__error) normalizer.pushLogs(logs);
 
             report({ phase: "chunk", done: i + 1, total: targets.length, message: `tick ${t}` });

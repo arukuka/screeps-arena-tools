@@ -6,7 +6,7 @@
  * ------------------------------------------------------------------
  * The core viewer renders only universal game information present in every match.
  * Bot-specific state (squad assignments, tactical modes, evaluations) is transported
- * via console logs (`src/extensions.js`) and rendered by standalone plugin scripts.
+ * via console logs (`src/extensions.ts`) and rendered by standalone plugin scripts.
  *
  * ------------------------------------------------------------------
  * Plugin Structure
@@ -25,14 +25,26 @@
  * ```
  */
 
+import type { ArenaPlugin, PluginApi, PluginLegend, PluginPanel, PluginToggle, ReplayDoc } from "../src/types.js";
+
+export interface PluginHostEntry {
+    id: string;
+    plugin: ArenaPlugin | null;
+    active: boolean;
+    error: string | null;
+    missing?: string[];
+}
+
 /**
  * Host managing loaded plugins, lifecycle, fault isolation, and dispatch.
  */
 export class PluginHost {
+    entries: PluginHostEntry[];
+    toggleState: Map<string, boolean>;
+    onError: ((id: string, message: string) => void) | null;
+
     constructor() {
-        /** @type {Array<{ id: string, plugin: any, active: boolean, error: string | null, missing?: string[] }>} */
         this.entries = [];
-        /** Toggle states: `toggles[].id` -> boolean */
         this.toggleState = new Map();
         this.onError = null;
     }
@@ -42,16 +54,16 @@ export class PluginHost {
      *
      * External origins are rejected for security. Serve plugins locally using `--plugins <dir>`.
      *
-     * @param {string} url
+     * @param url
      */
-    async load(url) {
+    async load(url: string): Promise<ArenaPlugin | null> {
         const id = url;
         try {
             if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(url) || url.startsWith("//")) {
                 throw new Error("plugins must use same-origin paths (serve with --plugins <dir>)");
             }
             const mod = await import(url);
-            const plugin = mod.default ?? mod;
+            const plugin = (mod.default ?? mod) as ArenaPlugin;
             if (!plugin || typeof plugin !== "object") throw new Error("default export is not an object");
 
             for (const t of plugin.toggles ?? []) {
@@ -70,9 +82,9 @@ export class PluginHost {
     /**
      * Activate or sleep plugins based on available metadata namespaces in a match replay.
      *
-     * @param {any} doc
+     * @param doc
      */
-    applyDocument(doc) {
+    applyDocument(doc: Partial<ReplayDoc>): void {
         const available = new Set(Object.keys(doc?.extensions ?? {}));
         for (const entry of this.entries) {
             if (entry.plugin === null) continue;
@@ -83,23 +95,23 @@ export class PluginHost {
     }
 
     /** Iterate over active, non-faulted plugins. */
-    *active() {
+    *active(): Generator<ArenaPlugin, void, unknown> {
         for (const entry of this.entries) {
             if (entry.active && entry.plugin !== null) yield entry.plugin;
         }
     }
 
-    isToggled(id) {
+    isToggled(id: string): boolean {
         return this.toggleState.get(id) !== false;
     }
 
-    setToggle(id, value) {
+    setToggle(id: string, value: boolean): void {
         this.toggleState.set(id, value);
     }
 
     /** Aggregate all toggle definitions across active plugins. */
-    toggles() {
-        const out = [];
+    toggles(): PluginToggle[] {
+        const out: PluginToggle[] = [];
         for (const plugin of this.active()) {
             for (const t of plugin.toggles ?? []) out.push({ ...t, plugin: plugin.name });
         }
@@ -107,8 +119,8 @@ export class PluginHost {
     }
 
     /** Aggregate all legend entries across active plugins. */
-    legend() {
-        const out = [];
+    legend(): PluginLegend[] {
+        const out: PluginLegend[] = [];
         for (const plugin of this.active()) {
             for (const item of plugin.legend ?? []) out.push(item);
         }
@@ -116,8 +128,8 @@ export class PluginHost {
     }
 
     /** Aggregate all panel definitions across active plugins. */
-    panels() {
-        const out = [];
+    panels(): PluginPanel[] {
+        const out: PluginPanel[] = [];
         for (const plugin of this.active()) {
             for (const panel of plugin.panels ?? []) out.push({ ...panel, plugin: plugin.name });
         }
@@ -126,17 +138,17 @@ export class PluginHost {
 
     /**
      * Execute board overlay rendering across active plugins.
-     * @param {any} api
+     * @param api
      */
-    drawOverlay(api) {
+    drawOverlay(api: PluginApi): void {
         for (const plugin of this.active()) {
             if (typeof plugin.drawOverlay !== "function") continue;
-            this.guard(plugin, () => plugin.drawOverlay(api));
+            this.guard(plugin, () => plugin.drawOverlay!(api));
         }
     }
 
     /** Safely execute plugin callbacks with error isolation. */
-    guard(plugin, fn) {
+    guard<T>(plugin: ArenaPlugin, fn: () => T): T | undefined {
         try {
             return fn();
         } catch (err) {
@@ -153,8 +165,8 @@ export class PluginHost {
 
 /**
  * Extract plugin paths from URL query string `?plugin=...`.
- * @param {string} search
+ * @param search
  */
-export function pluginsFromQuery(search) {
+export function pluginsFromQuery(search: string): string[] {
     return new URLSearchParams(search).getAll("plugin").filter((v) => v !== "");
 }

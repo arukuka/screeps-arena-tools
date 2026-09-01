@@ -6,18 +6,18 @@
  */
 
 /** API digit code to terrain character matching Screeps TERRAIN_* masks. */
-export const TERRAIN_CHARS = ["p", "w", "s"];
+export const TERRAIN_CHARS: readonly string[] = ["p", "w", "s"];
 
 /** Terrain character to renderer palette index (0=plain, 1=wall, 2=swamp). */
-export const TERRAIN_INDEX = { p: 0, w: 1, s: 2 };
+export const TERRAIN_INDEX: Record<string, number> = { p: 0, w: 1, s: 2 };
 
 /**
  * Encode a digit string (`"0102..."`) to run-length representation (`"p3w1s2..."`).
  *
- * @param {string} digits
- * @returns {string}
+ * @param digits
+ * @returns Encoded run-length terrain string
  */
-export function encodeTerrain(digits) {
+export function encodeTerrain(digits: string): string {
     let out = "";
     let run = 0;
     let cur = "";
@@ -40,18 +40,18 @@ export function encodeTerrain(digits) {
  *
  * Always returns an array of exact length `width * height`, clamping or padding with plain.
  *
- * @param {string} rle
- * @param {number} width
- * @param {number} height
- * @returns {Uint8Array}
+ * @param rle
+ * @param width
+ * @param height
+ * @returns Decoded terrain byte array
  */
-export function decodeTerrain(rle, width, height) {
+export function decodeTerrain(rle: string, width: number, height: number): Uint8Array {
     const cells = new Uint8Array(width * height);
     let pos = 0;
     const re = /([pws])(\d+)/g;
-    let m;
+    let m: RegExpExecArray | null;
     while ((m = re.exec(rle)) !== null) {
-        const value = TERRAIN_INDEX[m[1]];
+        const value = TERRAIN_INDEX[m[1]] ?? 0;
         const count = Number(m[2]);
         const end = Math.min(pos + count, cells.length);
         cells.fill(value, pos, end);

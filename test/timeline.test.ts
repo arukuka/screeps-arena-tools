@@ -1,15 +1,30 @@
 import assert from "node:assert/strict";
 import { gunzipSync } from "node:zlib";
 import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 
-import { KEYFRAME_STRIDE, applyFrame, bodyCounts, bodySize, buildTimeline, parseBody, sideStats, stateAt } from "../src/timeline.js";
+import {
+    KEYFRAME_STRIDE,
+    applyFrame,
+    bodyCounts,
+    bodySize,
+    buildTimeline,
+    parseBody,
+    sideStats,
+    stateAt,
+} from "../src/timeline.js";
+import type { BoardState, ReplayDoc, StructureState } from "../src/types.js";
 
-const fixture = (name) => fileURLToPath(new URL(`./fixtures/${name}`, import.meta.url));
+const CURRENT_DIR = dirname(fileURLToPath(import.meta.url));
+const ROOT = CURRENT_DIR.endsWith("dist/test") || CURRENT_DIR.endsWith("dist\\test")
+    ? resolve(CURRENT_DIR, "../..")
+    : resolve(CURRENT_DIR, "..");
+const fixture = (name: string): string => resolve(ROOT, "test/fixtures", name);
 
 /** Normalized match fixture XTTCQ7DA4T (2000 ticks / draw). */
-const doc = JSON.parse(gunzipSync(readFileSync(fixture("XTTCQ7DA4T.replay.json.gz"))).toString("utf-8"));
+const doc: ReplayDoc = JSON.parse(gunzipSync(readFileSync(fixture("XTTCQ7DA4T.replay.json.gz"))).toString("utf-8"));
 
 test("parses body run-length strings", () => {
     assert.deepEqual(parseBody("m2a1"), [
@@ -30,10 +45,10 @@ test("loads a real match replay document", () => {
 
 test("keyframe reconstruction matches sequential application", () => {
     const timeline = buildTimeline(doc);
-    const walked = {
+    const walked: BoardState = {
         tick: 0,
         creeps: new Map(),
-        struct: new Map([...timeline.base.struct].map(([k, v]) => [k, { ...v }])),
+        struct: new Map<string, StructureState>([...timeline.base.struct].map(([k, v]) => [k, { ...v }])),
         owner: new Map(timeline.base.owner),
         actions: [],
     };
@@ -44,8 +59,10 @@ test("keyframe reconstruction matches sequential application", () => {
         assert.equal(seeked.tick, walked.tick, `tick index ${i}`);
         assert.equal(seeked.creeps.size, walked.creeps.size, `tick index ${i} creep count`);
         for (const [id, c] of walked.creeps) {
+            const seekedCreep = seeked.creeps.get(id);
+            assert.ok(seekedCreep !== undefined);
             assert.deepEqual(
-                [seeked.creeps.get(id).x, seeked.creeps.get(id).y, seeked.creeps.get(id).hits],
+                [seekedCreep.x, seekedCreep.y, seekedCreep.hits],
                 [c.x, c.y, c.hits],
                 `tick index ${i} creep ${id}`,
             );
@@ -60,7 +77,7 @@ test("clamps out-of-range seeks to bounds", () => {
 });
 
 test("does not carry actions across ticks", () => {
-    const state = { tick: 0, creeps: new Map(), struct: new Map(), owner: new Map(), actions: [] };
+    const state: BoardState = { tick: 0, creeps: new Map(), struct: new Map(), owner: new Map(), actions: [] };
     applyFrame(state, { k: 1, a: [["1", "a", 2, 3]] });
     assert.equal(state.actions.length, 1);
     applyFrame(state, { k: 2 });
