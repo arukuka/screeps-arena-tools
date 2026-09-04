@@ -2,14 +2,16 @@
 
 A zero-dependency, buildless toolchain to **fetch, normalize, and view** [Screeps: Arena](https://arena.screeps.com/) match replays. Runs directly on Node.js.
 
+- **sync & watch** — Automatically sync match history and auto-download new replays as soon as games finish
 - **fetch** — Fetch match replays and console logs accessible by your account via the running Screeps: Arena client
 - **normalize** — Compress raw per-tick complete snapshots (280MB+ per match) into deltas of **tens of kilobytes**
 - **view** — Replay matches in your browser: terrain, structures, creeps, attacks/heals, energy, and flag captures
 - **plugins** — Overlay bot-specific internal state **without forking the codebase**
 
 ```bash
-npx arena-tools fetch https://arena.screeps.com/game/XTTCQ7DA4T
-npx arena-tools view
+npx arena-tools sync "Pain and Gain"  # Auto-fetch all recent replays
+npx arena-tools sync --watch         # Monitor & auto-download in background
+npx arena-tools view                 # http://localhost:5544/
 ```
 
 ---
@@ -17,17 +19,52 @@ npx arena-tools view
 ## Requirements
 
 - **Node.js 20+**
-- **macOS** (for `fetch` only; `view` and `convert` work on any OS)
+- **macOS** (for `fetch`, `sync`, and `history`; `view` and `convert` work on any OS)
 - **Screeps: Arena (Steam version) running and logged in**
 
-`fetch` can only retrieve matches that your account has permission to view.
+`fetch` and `sync` can only retrieve matches that your account has permission to view.
 It does not forge credentials; instead, **it delegates fetching to your already-authenticated local game client** (explained below).
 
 ---
 
 ## Usage
 
-### Fetch a Match
+### Auto-Sync Replays & Match History
+
+List your match history across arenas:
+
+```bash
+arena-tools history                  # Current / active arena
+arena-tools history "Pain and Gain"  # Specific arena
+```
+
+```
+=== Screeps: Arena Match History ===
+User:  arukuka (6251ab094840c4b45591026d)
+Arena: Pain and Gain (Basic) [6a86d8c454a3948a1e35f90c]
+Games: 15 total match(es) | showing 15
+
+#    Date (Local)     Result  Opponent                Ticks Rating       Replay   ID
+-----------------------------------------------------------------------------------------------
+15   09/04, 02:46 PM  Loss    OpponentA (v3)            314 655 -> 654   Missing  6a9a5b41...
+14   09/04, 02:46 PM  Win     OpponentB (v1)            319 658 -> 655   Missing  6a9a5b38...
+```
+
+Automatically download all missing match replays into `replays/`:
+
+```bash
+arena-tools sync                     # Automatically sync missing replays
+arena-tools sync "Pain and Gain"     # Specific arena
+```
+
+Or run in **watch mode** while bot development/testing is running:
+
+```bash
+arena-tools sync --watch             # Continuously checks for finished matches and downloads replays
+```
+
+### Fetch a Single Match
+
 
 You can paste either a full URL or a short ID directly:
 
@@ -92,6 +129,7 @@ Most of the board remains static during a game. By storing static properties onl
 The conversion is **lossless**. All 2001 ticks and 696,435 entities have been verified against raw snapshots with zero differences (tested in `test/normalize.test.ts`).
 
 For format details, see [`docs/FORMAT.md`](docs/FORMAT.md).
+For how the internal API was discovered and reverse-engineered via CDP, see [`docs/REVERSE_ENGINEERING.md`](docs/REVERSE_ENGINEERING.md).
 
 ---
 

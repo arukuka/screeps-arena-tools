@@ -5,7 +5,7 @@
  * discarding raw frames to prevent buffering hundreds of MBs in memory.
  */
 
-import { connect, enableInspector, findArenaPid, openMatchInApp, waitForInspector } from "./cdp.js";
+import { connect, enableInspector, findArenaPid, openMatchInApp, waitForInspector, type CdpSession } from "./cdp.js";
 import { createNormalizer } from "./normalize.js";
 import { matchUrl } from "./arena_url.js";
 import type { FetchMatchOptions, ReplayDoc } from "./types.js";
@@ -20,16 +20,72 @@ const CHUNK_SIZE = 100;
  */
 const fetchExpr = (url: string): string => `
     (async () => {
-        const res = await fetch(${JSON.stringify(url)});
+        const res = await fetch(${JSON.stringify(url)}, { credentials: 'include' });
         if (!res.ok) return { __error: true, status: res.status, statusText: res.statusText };
         return await res.json();
     })()
 `;
 
 /**
+ * Fetch a match using an existing CDP session without re-establishing inspector connection.
+ *
+ * @param session Connected CdpSession
+ * @param id Short ID or real MongoDB game ObjectId
+ * @param options
+ */
+export async function fetchGameWithSession(
+    session: CdpSession,
+    id: string,
+    options: FetchMatchOptions = {},
+): Promise<ReplayDoc> {
+    const report = options.onProgress ?? (() => {});
+
+    // 1. Resolve short ID or fetch match info directly by ObjectId.
+    const gameData: any = await session.evaluateInRenderer(fetchExpr(`${API}/game/${id}`));
+    if (!gameData || gameData.__error) {
+        throw new Error(
+            `Cannot fetch match info (${gameData?.status ?? "?"} ${gameData?.statusText ?? ""}).\n` +
+                `  Verify ${id} is accessible from your account.`,
+        );
+    }
+    const gameId = gameData.game?._id ?? id;
+    const shortId = gameData.game?.shortId ?? id;
+    const totalTicks = gameData.game?.meta?.ticks;
+    if (typeof gameId !== "string" || typeof totalTicks !== "number") {
+        throw new Error("Missing game._id or meta.ticks in API response (API format may have changed)");
+    }
+    report({ phase: "resolved", message: `${gameId} / ${totalTicks} ticks` });
+
+    const normalizer = createNormalizer({
+        gameData,
+        shortId,
+        gameId,
+        fetchedAt: new Date().toISOString(),
+    });
+
+    // 2. Chunk boundaries: tick 0 is initial state, followed by 100-tick chunks.
+    const targets: number[] = [0];
+    for (let t = CHUNK_SIZE; t < totalTicks; t += CHUNK_SIZE) targets.push(t);
+    if (totalTicks > 0 && targets[targets.length - 1] !== totalTicks) targets.push(totalTicks);
+
+    for (let i = 0; i < targets.length; i++) {
+        const t = targets[i];
+        const frames: any = await session.evaluateInRenderer(fetchExpr(`${API}/game/${gameId}/replay/${t}`));
+        if (Array.isArray(frames)) normalizer.pushFrames(frames);
+
+        const logs: any = await session.evaluateInRenderer(fetchExpr(`${API}/game/${gameId}/log/${t}`));
+        if (logs && !logs.__error) normalizer.pushLogs(logs);
+
+        report({ phase: "chunk", done: i + 1, total: targets.length, message: `tick ${t}` });
+    }
+
+    return normalizer.finish();
+}
+
+/**
  * Fetch a match and return a normalized replay document.
  *
- * @param shortId Normalized short ID
+ * @param shortId Normalized short ID or game ID
  * @param options
  */
 export async function fetchMatch(shortId: string, options: FetchMatchOptions = {}): Promise<ReplayDoc> {
@@ -61,47 +117,9 @@ export async function fetchMatch(shortId: string, options: FetchMatchOptions = {
 
     const session = await connect(wsUrl);
     try {
-        // 1. Resolve short ID to real MongoDB ObjectId.
-        //    The replay API requires the ObjectId and returns 502 for short IDs.
-        const gameData: any = await session.evaluateInRenderer(fetchExpr(`${API}/game/${shortId}`));
-        if (!gameData || gameData.__error) {
-            throw new Error(
-                `Cannot fetch match info (${gameData?.status ?? "?"} ${gameData?.statusText ?? ""}).\n` +
-                    `  Verify ${matchUrl(shortId)} is accessible from your account.`,
-            );
-        }
-        const gameId = gameData.game?._id;
-        const totalTicks = gameData.game?.meta?.ticks;
-        if (typeof gameId !== "string" || typeof totalTicks !== "number") {
-            throw new Error("Missing game._id or meta.ticks in API response (API format may have changed)");
-        }
-        report({ phase: "resolved", message: `${gameId} / ${totalTicks} ticks` });
-
-        const normalizer = createNormalizer({
-            gameData,
-            shortId,
-            gameId,
-            fetchedAt: new Date().toISOString(),
-        });
-
-        // 2. Chunk boundaries: tick 0 is initial state, followed by 100-tick chunks.
-        const targets: number[] = [0];
-        for (let t = CHUNK_SIZE; t < totalTicks; t += CHUNK_SIZE) targets.push(t);
-        if (totalTicks > 0 && targets[targets.length - 1] !== totalTicks) targets.push(totalTicks);
-
-        for (let i = 0; i < targets.length; i++) {
-            const t = targets[i];
-            const frames: any = await session.evaluateInRenderer(fetchExpr(`${API}/game/${gameId}/replay/${t}`));
-            if (Array.isArray(frames)) normalizer.pushFrames(frames);
-
-            const logs: any = await session.evaluateInRenderer(fetchExpr(`${API}/game/${gameId}/log/${t}`));
-            if (logs && !logs.__error) normalizer.pushLogs(logs);
-
-            report({ phase: "chunk", done: i + 1, total: targets.length, message: `tick ${t}` });
-        }
-
-        return normalizer.finish();
+        return await fetchGameWithSession(session, shortId, options);
     } finally {
         session.close();
     }
 }
+

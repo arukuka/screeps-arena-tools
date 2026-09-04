@@ -800,6 +800,7 @@ function tickLoop(now: number): void {
 
 async function loadReplayList(): Promise<void> {
     const el = $("replay-list");
+    const activeFile = el.querySelector<HTMLElement>(".match.active")?.dataset.file;
     try {
         const res = await fetch("/api/replays");
         const data = await res.json();
@@ -809,6 +810,9 @@ async function loadReplayList(): Promise<void> {
         }
         el.innerHTML = data.replays.map(renderReplayItem).join("");
         for (const raw of el.querySelectorAll<HTMLElement>(".match")) {
+            if (raw.dataset.file === activeFile) {
+                raw.classList.add("active");
+            }
             raw.addEventListener("click", async () => {
                 for (const other of el.querySelectorAll(".match")) other.classList.remove("active");
                 raw.classList.add("active");
@@ -1013,3 +1017,9 @@ plugins.onError = (id: string, message: string): void => {
 setupEvents();
 await loadPlugins();
 await loadReplayList();
+
+// Automatically check for newly synced replays every 10 seconds
+setInterval(() => {
+    loadReplayList();
+}, 10000);
+

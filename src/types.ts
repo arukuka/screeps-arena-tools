@@ -243,3 +243,46 @@ export interface ReplayListItem {
     modified: string;
     meta: Partial<ReplayMeta> | null;
 }
+
+export interface ArenaSummary {
+    _id: string;
+    name: string;
+    advanced: boolean;
+    folderName?: string;
+    active?: boolean;
+    rating?: number;
+    games?: number;
+    rank?: number;
+}
+
+export interface RatingHistoryItem {
+    _id: string;
+    gameId: string;
+    shortId?: string | null;
+    createdAt: string;
+    ticks: number;
+    winner: number | null;
+    draw?: boolean;
+    users: { _id: string; username: string }[];
+    codes: { _id: string; user: string; version: number }[];
+    ratingChange?: {
+        previousRating: number;
+        rating: number;
+        previousRank: number | null;
+        rank: number | null;
+    };
+    hasReplay: boolean;
+}
+
+export interface SyncOptions {
+    arena?: string;
+    limit?: number;
+    replayDir?: string;
+    onProgress?: (info: ProgressInfo) => void;
+    onMatchSynced?: (item: RatingHistoryItem, filePath: string, isNew: boolean) => void;
+}
+
+export interface WatchOptions extends SyncOptions {
+    intervalMs?: number;
+    signal?: AbortSignal;
+}
