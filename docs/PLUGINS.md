@@ -129,7 +129,7 @@ Passed to `drawOverlay` and `panels[].render`:
 ## 3. Loading Plugins
 
 ```bash
-arena-tools view --plugins ~/my-bot/arena-plugins
+screeps-arena-tools view --plugins ~/my-bot/arena-plugins
 ```
 
 All `*.js` files in the specified directory are loaded automatically. Plugins can stay in your bot's own repository without copying into `screeps-arena-tools`.

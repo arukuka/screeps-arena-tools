@@ -1,6 +1,6 @@
 # Replay Document Format
 
-The normalized replay format output by `arena-tools fetch` / `convert`.
+The normalized replay format output by `screeps-arena-tools fetch` / `convert`.
 Because it is standard JSON, browsers and tools can read it directly. `*.json.gz` is standard gzip compression.
 
 ```jsonc

@@ -805,7 +805,7 @@ async function loadReplayList(): Promise<void> {
         const res = await fetch("/api/replays");
         const data = await res.json();
         if (data.replays.length === 0) {
-            el.innerHTML = `<p class="hint">No replays in ${escapeHtml(data.dir)}.<br>Fetch one using: <code>arena-tools fetch &lt;URL&gt;</code></p>`;
+            el.innerHTML = `<p class="hint">No replays in ${escapeHtml(data.dir)}.<br>Fetch one using: <code>screeps-arena-tools fetch &lt;URL&gt;</code></p>`;
             return;
         }
         el.innerHTML = data.replays.map(renderReplayItem).join("");

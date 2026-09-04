@@ -20,12 +20,12 @@
  * Usage
  * ------------------------------------------------------------------
  * ```bash
- * arena-tools view --plugins ./examples/plugins
+ * screeps-arena-tools view --plugins ./examples/plugins
  * ```
  *
  * Or load from your bot's repository:
  * ```bash
- * arena-tools view --plugins ~/my-bot/arena-plugins
+ * screeps-arena-tools view --plugins ~/my-bot/arena-plugins
  * ```
  *
  * In matches without `@zones`, this plugin automatically sleeps.

@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 /**
- * `arena-tools` command line interface entry point.
+ * `screeps-arena-tools` command line interface entry point.
  *
- *   arena-tools fetch   <url|shortId> [-o <file>]
- *   arena-tools convert <raw.json>    [-o <file>]
- *   arena-tools view    [--port N] [--replays <dir>] [--plugins <dir>]
- *   arena-tools info    <replay.json.gz>
+ *   screeps-arena-tools fetch   <url|shortId> [-o <file>]
+ *   screeps-arena-tools convert <raw.json>    [-o <file>]
+ *   screeps-arena-tools view    [--port N] [--replays <dir>] [--plugins <dir>]
+ *   screeps-arena-tools info    <replay.json.gz>
  */
 
 import { mkdirSync } from "node:fs";
@@ -29,26 +29,26 @@ const ROOT = CURRENT_DIR.endsWith("dist/src") || CURRENT_DIR.endsWith("dist\\src
 const USAGE = `
 Screeps: Arena Tools
 
-  arena-tools history [arena] [--limit <n>]
+  screeps-arena-tools history [arena] [--limit <n>]
       List match history for an arena (default: currently active arena).
 
-  arena-tools sync [arena] [--limit <n>] [--watch] [--interval <sec>]
+  screeps-arena-tools sync [arena] [--limit <n>] [--watch] [--interval <sec>]
       Automatically sync all missing replays from running Screeps: Arena.
       Add --watch to keep monitoring and downloading new matches in real-time.
 
-  arena-tools fetch <url|shortId> [-o <file>]
+  screeps-arena-tools fetch <url|shortId> [-o <file>]
       Fetch match via running Screeps: Arena, normalize and save.
       URLs can be passed directly:
-        arena-tools fetch https://arena.screeps.com/game/XTTCQ7DA4T
-        arena-tools fetch XTTCQ7DA4T
+        screeps-arena-tools fetch https://arena.screeps.com/game/XTTCQ7DA4T
+        screeps-arena-tools fetch XTTCQ7DA4T
 
-  arena-tools convert <raw.json> [-o <file>] [--short-id <id>]
+  screeps-arena-tools convert <raw.json> [-o <file>] [--short-id <id>]
       Normalize raw JSON data already saved locally.
 
-  arena-tools view [--port <n>] [--replays <dir>] [--plugins <dir>]
+  screeps-arena-tools view [--port <n>] [--replays <dir>] [--plugins <dir>]
       Start the replay viewer (default http://localhost:${DEFAULT_PORT}/).
 
-  arena-tools info <replay.json.gz>
+  screeps-arena-tools info <replay.json.gz>
       Display summary of a normalized replay file.
 `.trim();
 
@@ -117,7 +117,7 @@ async function cmdFetch(positional: string[], flags: Record<string, string | boo
     console.log(`\nSaved: ${out} (${(bytes / 1024).toFixed(1)} KB)`);
     console.log(`  ${describeReplay(doc)}`);
     reportExtensions(doc);
-    console.log(`\n  To view: arena-tools view`);
+    console.log(`\n  To view: screeps-arena-tools view`);
 }
 
 function cmdConvert(positional: string[], flags: Record<string, string | boolean>): void {
@@ -155,7 +155,7 @@ function cmdView(flags: Record<string, string | boolean>): void {
     console.log(`Viewer: http://localhost:${opts.port}/`);
     console.log(`  Replays: ${opts.replayDir} (${found.length} items)`);
     console.log(`  Plugins: ${opts.pluginDir ?? "(none)"}`);
-    if (found.length === 0) console.log("  No replays found. Fetch one using: arena-tools fetch <url>");
+    if (found.length === 0) console.log("  No replays found. Fetch one using: screeps-arena-tools fetch <url>");
     console.log("  Press Ctrl+C to stop");
     console.log("==================================================");
 }
@@ -261,10 +261,10 @@ async function cmdHistory(positional: string[], flags: Record<string, string | b
 
         if (missingCount > 0) {
             console.log(`\n  ${missingCount} match(es) not yet downloaded.`);
-            console.log(`  To fetch all: arena-tools sync "${arena.name}"`);
+            console.log(`  To fetch all: screeps-arena-tools sync "${arena.name}"`);
         } else {
             console.log(`\n  All listed matches are downloaded and ready to view.`);
-            console.log(`  To view: arena-tools view`);
+            console.log(`  To view: screeps-arena-tools view`);
         }
     } finally {
         session.close();
@@ -341,7 +341,7 @@ async function cmdSync(positional: string[], flags: Record<string, string | bool
     console.log(`  Total matches in history : ${result.totalHistory}`);
     console.log(`  Newly downloaded         : ${result.fetched}`);
     console.log(`  Already downloaded       : ${result.skipped}`);
-    console.log(`\n  To view replays: arena-tools view`);
+    console.log(`\n  To view replays: screeps-arena-tools view`);
 }
 
 async function main(): Promise<void> {

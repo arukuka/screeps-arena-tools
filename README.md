@@ -9,9 +9,9 @@ A zero-dependency, buildless toolchain to **fetch, normalize, and view** [Screep
 - **plugins** — Overlay bot-specific internal state **without forking the codebase**
 
 ```bash
-npx arena-tools sync "Pain and Gain"  # Auto-fetch all recent replays
-npx arena-tools sync --watch         # Monitor & auto-download in background
-npx arena-tools view                 # http://localhost:5544/
+npx screeps-arena-tools sync "Pain and Gain"  # Auto-fetch all recent replays
+npx screeps-arena-tools sync --watch         # Monitor & auto-download in background
+npx screeps-arena-tools view                 # http://localhost:5544/
 ```
 
 ---
@@ -34,8 +34,8 @@ It does not forge credentials; instead, **it delegates fetching to your already-
 List your match history across arenas:
 
 ```bash
-arena-tools history                  # Current / active arena
-arena-tools history "Pain and Gain"  # Specific arena
+screeps-arena-tools history                  # Current / active arena
+screeps-arena-tools history "Pain and Gain"  # Specific arena
 ```
 
 ```
@@ -53,14 +53,14 @@ Games: 15 total match(es) | showing 15
 Automatically download all missing match replays into `replays/`:
 
 ```bash
-arena-tools sync                     # Automatically sync missing replays
-arena-tools sync "Pain and Gain"     # Specific arena
+screeps-arena-tools sync                     # Automatically sync missing replays
+screeps-arena-tools sync "Pain and Gain"     # Specific arena
 ```
 
 Or run in **watch mode** while bot development/testing is running:
 
 ```bash
-arena-tools sync --watch             # Continuously checks for finished matches and downloads replays
+screeps-arena-tools sync --watch             # Continuously checks for finished matches and downloads replays
 ```
 
 ### Fetch a Single Match
@@ -69,9 +69,9 @@ arena-tools sync --watch             # Continuously checks for finished matches 
 You can paste either a full URL or a short ID directly:
 
 ```bash
-arena-tools fetch https://arena.screeps.com/game/XTTCQ7DA4T
-arena-tools fetch XTTCQ7DA4T
-arena-tools fetch XTTCQ7DA4T -o replays/vs-opponent.json.gz
+screeps-arena-tools fetch https://arena.screeps.com/game/XTTCQ7DA4T
+screeps-arena-tools fetch XTTCQ7DA4T
+screeps-arena-tools fetch XTTCQ7DA4T -o replays/vs-opponent.json.gz
 ```
 
 ```
@@ -89,8 +89,8 @@ Saved: replays/XTTCQ7DA4T.replay.json.gz (28.9 KB)
 ### View Replays
 
 ```bash
-arena-tools view                 # http://localhost:5544/
-arena-tools view --port 8080 --replays ./replays
+screeps-arena-tools view                 # http://localhost:5544/
+screeps-arena-tools view --port 8080 --replays ./replays
 ```
 
 | Action | Control |
@@ -105,8 +105,8 @@ arena-tools view --port 8080 --replays ./replays
 ### Convert Existing Raw Data
 
 ```bash
-arena-tools convert match_XTTCQ7DA4T.json --short-id XTTCQ7DA4T
-arena-tools info replays/XTTCQ7DA4T.replay.json.gz
+screeps-arena-tools convert match_XTTCQ7DA4T.json --short-id XTTCQ7DA4T
+screeps-arena-tools info replays/XTTCQ7DA4T.replay.json.gz
 ```
 
 ---
@@ -141,7 +141,7 @@ However, your running desktop client already holds a valid authenticated session
 ```mermaid
 sequenceDiagram
     autonumber
-    participant CLI as arena-tools
+    participant CLI as screeps-arena-tools
     participant App as Screeps: Arena (Electron)
     participant API as arena.screeps.com/api
 
@@ -182,7 +182,7 @@ console.log(`@creepZone ${JSON.stringify({ "335": 0, "340": 2 })}`);
 ```
 
 ```bash
-arena-tools view --plugins ~/my-bot/arena-plugins
+screeps-arena-tools view --plugins ~/my-bot/arena-plugins
 ```
 
 For logs without `@zones` (e.g. opponents' or other players' games), the plugin automatically sleeps.
