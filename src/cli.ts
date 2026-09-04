@@ -8,12 +8,13 @@
  *   screeps-arena-tools info    <replay.json.gz>
  */
 
-import { mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { matchUrl, parseMatchRef } from "./arena_url.js";
 import { fetchMatch } from "./fetch_match.js";
+import { generateReplayGif } from "./gif.js";
 import { normalizeMatch } from "./normalize.js";
 import { describeReplay, isReplayDoc, readReplay, writeReplay } from "./replay_io.js";
 import { DEFAULT_PORT, listReplays, resolveServeOptions, serve } from "./serve.js";
@@ -44,6 +45,9 @@ Screeps: Arena Tools
 
   screeps-arena-tools convert <raw.json> [-o <file>] [--short-id <id>]
       Normalize raw JSON data already saved locally.
+
+  screeps-arena-tools gif <replay|shortId> [-o <file>] [--start N] [--end N] [--step N] [--fps N] [--cell N]
+      Export animated GIF of a match replay.
 
   screeps-arena-tools view [--port <n>] [--replays <dir>] [--plugins <dir>]
       Start the replay viewer (default http://localhost:${DEFAULT_PORT}/).
@@ -141,6 +145,66 @@ function cmdConvert(positional: string[], flags: Record<string, string | boolean
     console.log(`Saved: ${out} (${(bytes / 1024).toFixed(1)} KB)`);
     console.log(`  ${describeReplay(doc)}`);
     reportExtensions(doc);
+}
+
+function resolveReplayPath(ref: string): string {
+    const candidates = [
+        resolve(process.cwd(), ref),
+        resolve(process.cwd(), `replays/${ref}`),
+        resolve(process.cwd(), `replays/${ref}.replay.json.gz`),
+        resolve(process.cwd(), `replays/${ref}.replay.json`),
+        resolve(process.cwd(), `${ref}.replay.json.gz`),
+        resolve(process.cwd(), `${ref}.replay.json`),
+    ];
+    for (const c of candidates) {
+        if (existsSync(c)) return c;
+    }
+    throw new Error(`Replay not found: "${ref}" (checked in replays/ directory)`);
+}
+
+async function cmdGif(positional: string[], flags: Record<string, string | boolean>): Promise<void> {
+    if (positional.length === 0) throw new Error("Pass a replay file or match short ID");
+    const inputPath = resolveReplayPath(positional[0]);
+    const raw = readReplay(inputPath);
+    const doc: ReplayDoc = isReplayDoc(raw) ? raw : normalizeMatch(raw);
+
+    const name = doc.meta.shortId ?? doc.meta.gameId ?? "match";
+    const out = resolve(process.cwd(), outOf(flags) ?? `replays/${name}.gif`);
+    mkdirSync(dirname(out), { recursive: true });
+
+    const startTick = flags.start !== undefined ? Number(flags.start) : undefined;
+    const endTick = flags.end !== undefined ? Number(flags.end) : undefined;
+    const step = flags.step !== undefined ? Math.max(1, Number(flags.step)) : 1;
+    const fps = flags.fps !== undefined ? Math.max(1, Number(flags.fps)) : 10;
+    const cell = flags.cell !== undefined ? Math.max(2, Number(flags.cell)) : 4;
+    const showActions = flags["no-actions"] ? false : true;
+    const showStructures = flags["no-structures"] ? false : true;
+
+    console.log(`=== Screeps: Arena GIF Export ===`);
+    console.log(`Match:  ${describeReplay(doc)}`);
+    console.log(`Range:  tick ${startTick ?? 0}..${endTick ?? doc.meta.ticks} (step ${step}) @ ${fps} fps [cell=${cell}px]`);
+    console.log(`Target: ${out}`);
+
+    const buffer = generateReplayGif(doc, {
+        startTick,
+        endTick,
+        step,
+        fps,
+        cell,
+        showActions,
+        showStructures,
+        onProgress: (done, total) => {
+            const pct = Math.round((done / total) * 100);
+            const line = `  rendering frames: ${done}/${total} (${pct}%)`;
+            if (process.stdout.isTTY) process.stdout.write(`\r${line}   `);
+            else if (done === total) console.log(line);
+        },
+    });
+
+    if (process.stdout.isTTY) process.stdout.write("\n");
+    writeFileSync(out, buffer);
+
+    console.log(`\nSaved: ${out} (${(buffer.length / 1024).toFixed(1)} KB)`);
 }
 
 function cmdView(flags: Record<string, string | boolean>): void {
@@ -360,6 +424,9 @@ async function main(): Promise<void> {
             break;
         case "convert":
             cmdConvert(positional, flags);
+            break;
+        case "gif":
+            await cmdGif(positional, flags);
             break;
         case "view":
             cmdView(flags);

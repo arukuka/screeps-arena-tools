@@ -6,6 +6,7 @@ A zero-dependency, buildless toolchain to **fetch, normalize, and view** [Screep
 - **fetch** — Fetch match replays and console logs accessible by your account via the running Screeps: Arena client
 - **normalize** — Compress raw per-tick complete snapshots (280MB+ per match) into deltas of **tens of kilobytes**
 - **view** — Replay matches in your browser: terrain, structures, creeps, attacks/heals, energy, and flag captures
+- **gif** — Render match replays to animated GIFs directly from CLI or visualizer with zero dependencies
 - **plugins** — Overlay bot-specific internal state **without forking the codebase**
 
 ```bash
@@ -19,7 +20,7 @@ npx screeps-arena-tools view                 # http://localhost:5544/
 ## Requirements
 
 - **Node.js 20+**
-- **macOS** (for `fetch`, `sync`, and `history`; `view` and `convert` work on any OS)
+- **macOS** (for `fetch`, `sync`, and `history`; `view`, `convert`, and `gif` work on any OS)
 - **Screeps: Arena (Steam version) running and logged in**
 
 `fetch` and `sync` can only retrieve matches that your account has permission to view.
@@ -101,6 +102,36 @@ screeps-arena-tools view --port 8080 --replays ./replays
 | Pan / Zoom board | Drag / Scroll wheel |
 | Reset board position & zoom | Double click / `0` / `R` |
 | Open file | Drag & drop file onto the board |
+
+### Export Animated GIF
+
+Export a match replay to an animated GIF directly from the command line:
+
+```bash
+# Export replay to replays/<name>.gif
+screeps-arena-tools gif XTTCQ7DA4T
+
+# Specify tick range, speed, sampling step, and output file
+screeps-arena-tools gif replays/XTTCQ7DA4T.replay.json.gz \
+    --start 0 --end 100 \
+    --step 2 \
+    --fps 10 \
+    --cell 4 \
+    -o preview.gif
+```
+
+| Flag | Default | Description |
+| --- | --- | --- |
+| `-o`, `--out` | `replays/<name>.gif` | Output GIF filepath |
+| `--start` | `0` | Start tick |
+| `--end` | Last tick | End tick |
+| `--step` | `1` | Tick interval (e.g. `2` renders every second tick) |
+| `--fps` | `10` | Playback frame rate (frames per second) |
+| `--cell` | `4` | Cell pixel size (e.g. `4` = 400x400 px for a 100x100 board) |
+| `--no-actions` | `false` | Exclude combat action rays |
+| `--no-structures` | `false` | Exclude structures |
+
+You can also click **🎬 Export GIF** directly in the browser visualizer (`screeps-arena-tools view`) to select tick ranges with presets, adjust settings, and download the animated GIF with one click.
 
 ### Convert Existing Raw Data
 

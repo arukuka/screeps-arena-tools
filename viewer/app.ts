@@ -16,6 +16,14 @@ import {
     sideStats,
     stateAt,
 } from "../src/timeline.js";
+import {
+    drawStructures as renderStructures,
+    drawCreeps as renderCreeps,
+    drawActions as renderActions,
+    ROLE_COLOR,
+    ACTION_COLOR,
+    fade,
+} from "../src/board_render.js";
 import { normalizeMatch } from "../src/normalize.js";
 import { PluginHost, pluginsFromQuery } from "./plugin.js";
 import type {
@@ -43,21 +51,6 @@ const TERRAIN_RGB: readonly (readonly [number, number, number])[] = [
     [0, 0, 0],
     [29, 42, 31],
 ];
-
-/** Combat part indicator colors displayed as center dots on creeps. */
-const ROLE_COLOR: Record<string, string> = {
-    attack: "#ff5d5d",
-    ranged_attack: "#ffd166",
-    heal: "#6ee7a8",
-};
-
-const ACTION_COLOR: Record<string, string> = {
-    a: "#ff5d5d",
-    r: "#ffb15d",
-    R: "#ffb15d",
-    h: "#6ee7a8",
-    H: "#8ee0ff",
-};
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string): T => document.getElementById(id) as T;
 const $input = (id: string): HTMLInputElement => document.getElementById(id) as HTMLInputElement;
@@ -101,6 +94,7 @@ interface ViewState {
     dragStart: { x: number; y: number; panX: number; panY: number };
     hasDragged: boolean;
     sideColors: string[];
+    activeFile: string | null;
 }
 
 const view: ViewState = {
@@ -123,17 +117,11 @@ const view: ViewState = {
     dragStart: { x: 0, y: 0, panX: 0, panY: 0 },
     hasDragged: false,
     sideColors: [...FALLBACK_SIDE_COLOR],
+    activeFile: null,
 };
 
 const sideColor = (side: number | null | undefined): string =>
     side === null || side === undefined ? NEUTRAL : view.sideColors[side] ?? NEUTRAL;
-
-/** Apply alpha transparency to hex color `#rrggbb`. */
-function fade(hex: string, alpha: number): string {
-    const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex ?? "");
-    if (m === null) return hex;
-    return `rgba(${parseInt(m[1], 16)},${parseInt(m[2], 16)},${parseInt(m[3], 16)},${alpha})`;
-}
 
 // ============================================================
 // Loading
@@ -154,7 +142,8 @@ function acceptDocument(json: any, label?: string): void {
     loadReplay(doc, label);
 }
 
-function loadReplay(doc: ReplayDoc, _label?: string): void {
+function loadReplay(doc: ReplayDoc, label?: string): void {
+    view.activeFile = label ?? null;
     view.timeline = buildTimeline(doc);
     view.series = buildSeries(view.timeline);
     view.extIndex = new Map(
@@ -295,165 +284,19 @@ function resizeBoard(): void {
     render();
 }
 
-const isDestroyed = (o: ReplayObject, cur?: StructureState): boolean =>
-    o.hitsMax > 0 && (cur === undefined || cur.hits <= 0);
-
 function drawStructures(ctx: CanvasRenderingContext2D, cell: number): void {
     if (!view.timeline || !view.state) return;
-    const { doc } = view.timeline;
-    const state = view.state;
-
-    for (const o of doc.objects) {
-        const cur = state.struct.get(o.id);
-        if (o.kind !== "flag" && isDestroyed(o, cur)) continue;
-        const side = state.owner.get(o.id);
-        const x = o.x * cell;
-        const y = o.y * cell;
-
-        switch (o.kind) {
-            case "constructedWall":
-                ctx.fillStyle = "#3a4351";
-                ctx.fillRect(x, y, cell, cell);
-                break;
-            case "rampart":
-                ctx.fillStyle = fade(sideColor(side), 0.3);
-                ctx.fillRect(x, y, cell, cell);
-                break;
-            case "extension": {
-                const ratio = o.energyCapacity > 0 ? (cur?.energy ?? 0) / o.energyCapacity : 0;
-                const clamped = Math.max(0, Math.min(1, ratio));
-                const size = cell * 0.7;
-                const pad = (cell - size) / 2;
-                const sx = x + pad;
-                const sy = y + pad;
-                const color = sideColor(side);
-
-                ctx.fillStyle = fade(color, 0.15 + clamped * 0.75);
-                ctx.fillRect(sx, sy, size, size);
-                ctx.strokeStyle = fade(color, 0.35 + clamped * 0.55);
-                ctx.lineWidth = Math.max(1, cell * 0.08);
-                ctx.strokeRect(sx, sy, size, size);
-                break;
-            }
-            case "spawn": {
-                const size = cell * 2.4;
-                ctx.fillStyle = fade(sideColor(side), 0.35);
-                ctx.fillRect(x - size / 2 + cell / 2, y - size / 2 + cell / 2, size, size);
-                ctx.strokeStyle = sideColor(side);
-                ctx.lineWidth = Math.max(1, cell * 0.25);
-                ctx.strokeRect(x - size / 2 + cell / 2, y - size / 2 + cell / 2, size, size);
-                if (isDestroyed(o, cur)) {
-                    ctx.beginPath();
-                    ctx.moveTo(x - size / 2 + cell / 2, y - size / 2 + cell / 2);
-                    ctx.lineTo(x + size / 2 + cell / 2, y + size / 2 + cell / 2);
-                    ctx.moveTo(x + size / 2 + cell / 2, y - size / 2 + cell / 2);
-                    ctx.lineTo(x - size / 2 + cell / 2, y + size / 2 + cell / 2);
-                    ctx.stroke();
-                }
-                break;
-            }
-            case "flag": {
-                const r = cell * 1.6;
-                ctx.save();
-                ctx.translate(x + cell / 2, y + cell / 2);
-                ctx.rotate(Math.PI / 4);
-                ctx.fillStyle = fade(sideColor(side), 0.5);
-                ctx.fillRect(-r / 2, -r / 2, r, r);
-                ctx.strokeStyle = sideColor(side);
-                ctx.lineWidth = Math.max(1, cell * 0.22);
-                ctx.strokeRect(-r / 2, -r / 2, r, r);
-                ctx.restore();
-                break;
-            }
-            default:
-                ctx.fillStyle = fade(sideColor(side), 0.4);
-                ctx.fillRect(x, y, cell, cell);
-        }
-    }
-}
-
-function dominantPart(body: string): string | null {
-    const counts = bodyCounts(body);
-    let best: string | null = null;
-    let bestCount = 0;
-    for (const name of ["attack", "ranged_attack", "heal"]) {
-        if ((counts[name] ?? 0) > bestCount) {
-            best = name;
-            bestCount = counts[name];
-        }
-    }
-    return best;
-}
-
-function creepRadius(body: string, cell: number): number {
-    const size = bodySize(body);
-    return cell * (0.45 + 0.55 * Math.min(1, Math.sqrt(size) / 6));
+    renderStructures(ctx, view.timeline, view.state, cell, sideColor);
 }
 
 function drawCreeps(ctx: CanvasRenderingContext2D, cell: number): void {
-    if (!view.state) return;
-    for (const c of view.state.creeps.values()) {
-        const cx = c.x * cell + cell / 2;
-        const cy = c.y * cell + cell / 2;
-        const r = creepRadius(c.body, cell);
-        const color = sideColor(c.side);
-
-        ctx.beginPath();
-        ctx.arc(cx, cy, r, 0, Math.PI * 2);
-        ctx.fillStyle = c.spawning ? fade(color, 0.25) : fade(color, 0.75);
-        ctx.fill();
-
-        if (view.selected === c.id) {
-            ctx.strokeStyle = "#ffffff";
-            ctx.lineWidth = Math.max(1, cell * 0.2);
-            ctx.stroke();
-        }
-
-        if (c.hitsMax > 0 && c.hits < c.hitsMax) {
-            ctx.beginPath();
-            ctx.arc(cx, cy, r + Math.max(1, cell * 0.28), -Math.PI / 2, -Math.PI / 2 + (Math.PI * 2 * c.hits) / c.hitsMax);
-            ctx.strokeStyle = "#ffffff";
-            ctx.lineWidth = Math.max(1, cell * 0.22);
-            ctx.stroke();
-        }
-
-        const role = dominantPart(c.body);
-        if (role !== null) {
-            ctx.beginPath();
-            ctx.arc(cx, cy, Math.max(1, r * 0.32), 0, Math.PI * 2);
-            ctx.fillStyle = ROLE_COLOR[role];
-            ctx.fill();
-        }
-    }
+    if (!view.timeline || !view.state) return;
+    renderCreeps(ctx, view.timeline, view.state, cell, sideColor, view.selected);
 }
 
 function drawActions(ctx: CanvasRenderingContext2D, cell: number): void {
-    if (!view.state || !view.timeline) return;
-    const state = view.state;
-    for (const entry of state.actions) {
-        const [id, code, tx, ty] = entry;
-        if (INCOMING_ACTIONS.has(code)) continue;
-        const actor = state.creeps.get(id) ?? view.timeline.objectById.get(id);
-        if (actor === undefined) continue;
-        const ax = actor.x * cell + cell / 2;
-        const ay = actor.y * cell + cell / 2;
-        const color = ACTION_COLOR[code] ?? "#d7e0ea";
-
-        if (tx === undefined) {
-            ctx.beginPath();
-            ctx.arc(ax, ay, cell * 3, 0, Math.PI * 2);
-            ctx.strokeStyle = fade(color, 0.5);
-            ctx.lineWidth = Math.max(1, cell * 0.18);
-            ctx.stroke();
-            continue;
-        }
-        ctx.beginPath();
-        ctx.moveTo(ax, ay);
-        ctx.lineTo(tx * cell + cell / 2, (ty ?? 0) * cell + cell / 2);
-        ctx.strokeStyle = fade(color, 0.85);
-        ctx.lineWidth = Math.max(1, cell * 0.18);
-        ctx.stroke();
-    }
+    if (!view.timeline || !view.state) return;
+    renderActions(ctx, view.timeline, view.state, cell);
 }
 
 function render(): void {
@@ -889,6 +732,140 @@ async function loadPlugins(): Promise<void> {
 }
 
 // ============================================================
+// GIF Export
+// ============================================================
+
+let currentGifBlobUrl: string | null = null;
+
+function openGifModal(): void {
+    if (view.timeline === null) return;
+    const doc = view.timeline.doc;
+    $("gif-match-info").textContent = describe(doc);
+
+    const maxTick = Math.max(0, view.timeline.length - 1);
+    const startInput = $input("gif-start-tick");
+    const endInput = $input("gif-end-tick");
+
+    startInput.min = "0";
+    startInput.max = String(maxTick);
+    startInput.value = "0";
+
+    endInput.min = "0";
+    endInput.max = String(maxTick);
+    endInput.value = String(maxTick);
+
+    $("gif-progress-wrap").hidden = true;
+    $("gif-preview-wrap").hidden = true;
+    if (currentGifBlobUrl !== null) {
+        URL.revokeObjectURL(currentGifBlobUrl);
+        currentGifBlobUrl = null;
+    }
+    const btn = $("gif-generate-btn") as HTMLButtonElement;
+    btn.disabled = false;
+    btn.textContent = "Generate & Download";
+
+    updateGifSummary();
+    $("gif-modal").hidden = false;
+}
+
+function closeGifModal(): void {
+    $("gif-modal").hidden = true;
+    if (currentGifBlobUrl !== null) {
+        URL.revokeObjectURL(currentGifBlobUrl);
+        currentGifBlobUrl = null;
+    }
+}
+
+function updateGifSummary(): void {
+    if (view.timeline === null) return;
+    const start = Math.max(0, Number($input("gif-start-tick").value) || 0);
+    const end = Math.max(start, Number($input("gif-end-tick").value) || 0);
+    const step = Math.max(1, Number($input("gif-step").value) || 1);
+    const fps = Math.max(1, Number($input("gif-fps").value) || 10);
+    const cell = Math.max(2, Number($input("gif-cell").value) || 4);
+
+    const frames = Math.floor((end - start) / step) + 1;
+    const duration = (frames / fps).toFixed(1);
+    const estKb = Math.round(frames * (cell * cell * 0.4 + 4));
+
+    $("gif-frame-count").textContent = String(frames);
+    $("gif-duration").textContent = String(duration);
+    $("gif-est-size").textContent = estKb >= 1024 ? `${(estKb / 1024).toFixed(1)} MB` : `${estKb} KB`;
+}
+
+async function generateGif(): Promise<void> {
+    if (view.timeline === null) return;
+    const start = Math.max(0, Number($input("gif-start-tick").value) || 0);
+    const end = Math.max(start, Number($input("gif-end-tick").value) || 0);
+    const step = Math.max(1, Number($input("gif-step").value) || 1);
+    const fps = Math.max(1, Number($input("gif-fps").value) || 10);
+    const cell = Math.max(2, Number($input("gif-cell").value) || 4);
+
+    const btn = $("gif-generate-btn") as HTMLButtonElement;
+    btn.disabled = true;
+    btn.textContent = "Generating…";
+    $("gif-progress-wrap").hidden = false;
+    $("gif-progress-text").textContent = "Generating GIF on server…";
+    $("gif-preview-wrap").hidden = true;
+
+    try {
+        const payload: Record<string, unknown> = {
+            start,
+            end,
+            step,
+            fps,
+            cell,
+        };
+        if (view.activeFile !== null) {
+            payload.file = view.activeFile;
+        } else {
+            payload.doc = view.timeline.doc;
+        }
+
+        const res = await fetch("/api/gif", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(payload),
+        });
+
+        if (!res.ok) {
+            const errText = await res.text();
+            throw new Error(errText || `Server error (${res.status})`);
+        }
+
+        const blob = await res.blob();
+        if (currentGifBlobUrl !== null) {
+            URL.revokeObjectURL(currentGifBlobUrl);
+        }
+        currentGifBlobUrl = URL.createObjectURL(blob);
+
+        const shortId = view.timeline.doc.meta.shortId ?? view.timeline.doc.meta.gameId ?? "match";
+        const downloadName = `${shortId}_${start}-${end}.gif`;
+
+        // Trigger browser download
+        const a = document.createElement("a");
+        a.href = currentGifBlobUrl;
+        a.download = downloadName;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+
+        // Show preview in modal
+        const img = $("gif-preview-img") as HTMLImageElement;
+        img.src = currentGifBlobUrl;
+        $("gif-preview-meta").textContent = `Downloaded: ${downloadName} (${(blob.size / 1024).toFixed(1)} KB)`;
+        $("gif-preview-wrap").hidden = false;
+        $("gif-progress-wrap").hidden = true;
+        btn.textContent = "Re-Generate";
+    } catch (err) {
+        $("gif-progress-text").textContent = `Failed: ${err instanceof Error ? err.message : String(err)}`;
+        btn.textContent = "Retry";
+    } finally {
+        btn.disabled = false;
+    }
+}
+
+// ============================================================
 // Event Handling
 // ============================================================
 
@@ -902,6 +879,48 @@ function setupEvents(): void {
     $("btn-play").addEventListener("click", () => setPlaying(!view.playing));
     $input("scrubber").addEventListener("input", (e) => seek(Number(inputOf(e).value)));
     $("reload-replays").addEventListener("click", loadReplayList);
+    $("btn-export-gif").addEventListener("click", openGifModal);
+    $("gif-modal-close").addEventListener("click", closeGifModal);
+    $("gif-modal-cancel").addEventListener("click", closeGifModal);
+    $("gif-generate-btn").addEventListener("click", generateGif);
+
+    $input("gif-start-tick").addEventListener("input", updateGifSummary);
+    $input("gif-end-tick").addEventListener("input", updateGifSummary);
+    $input("gif-fps").addEventListener("change", updateGifSummary);
+    $input("gif-step").addEventListener("change", updateGifSummary);
+    $input("gif-cell").addEventListener("change", updateGifSummary);
+
+    $("gif-preset-full").addEventListener("click", () => {
+        if (!view.timeline) return;
+        $input("gif-start-tick").value = "0";
+        $input("gif-end-tick").value = String(view.timeline.length - 1);
+        updateGifSummary();
+    });
+    $("gif-preset-current").addEventListener("click", () => {
+        if (!view.timeline) return;
+        const s = Math.max(0, view.index - 50);
+        const e = Math.min(view.timeline.length - 1, view.index + 50);
+        $input("gif-start-tick").value = String(s);
+        $input("gif-end-tick").value = String(e);
+        updateGifSummary();
+    });
+    $("gif-preset-first100").addEventListener("click", () => {
+        if (!view.timeline) return;
+        $input("gif-start-tick").value = "0";
+        $input("gif-end-tick").value = String(Math.min(view.timeline.length - 1, 100));
+        updateGifSummary();
+    });
+    $("gif-preset-last100").addEventListener("click", () => {
+        if (!view.timeline) return;
+        const s = Math.max(0, view.timeline.length - 101);
+        $input("gif-start-tick").value = String(s);
+        $input("gif-end-tick").value = String(view.timeline.length - 1);
+        updateGifSummary();
+    });
+
+    $("gif-modal").addEventListener("click", (e) => {
+        if (e.target === $("gif-modal")) closeGifModal();
+    });
 
     $("show-actions").addEventListener("change", (e) => {
         view.showActions = inputOf(e).checked;
@@ -975,6 +994,10 @@ function setupEvents(): void {
     });
 
     window.addEventListener("keydown", (e) => {
+        if (e.key === "Escape" && !$("gif-modal").hidden) {
+            closeGifModal();
+            return;
+        }
         if (e.target instanceof HTMLInputElement && e.target.type !== "range") return;
         switch (e.key) {
             case " ":

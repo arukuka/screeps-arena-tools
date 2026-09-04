@@ -8,4 +8,7 @@ export { describeReplay, isReplayDoc, readReplay, writeReplay } from "./replay_i
 export { fetchMatch, fetchGameWithSession } from "./fetch_match.js";
 export { syncReplays, watchReplays, openArenaSession, getExistingMatchIds } from "./sync.js";
 export { getCurrentUser, getSeasonArenas, resolveArena, fetchRatingHistory } from "./arena_api.js";
+export { drawBoard, drawStructures, drawCreeps, drawActions, drawTerrain } from "./board_render.js";
+export { SoftwareCanvas } from "./software_canvas.js";
+export { GifEncoder, generateReplayGif } from "./gif.js";
 export * from "./types.js";

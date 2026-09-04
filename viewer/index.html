@@ -17,6 +17,7 @@
                 <input type="file" id="file-input" accept=".json,.gz" hidden />
             </label>
             <button id="reload-replays" type="button" title="Rescan replay directory">Rescan</button>
+            <button id="btn-export-gif" type="button" class="action-btn" title="Export Match as Animated GIF">🎬 Export GIF</button>
         </div>
     </header>
 
@@ -110,6 +111,80 @@
         <input type="range" id="scrubber" min="0" max="0" value="0" step="1" />
         <canvas id="chart" class="chart"></canvas>
     </footer>
+
+    <!-- GIF Export Modal Dialog -->
+    <div id="gif-modal" class="modal-backdrop" hidden>
+        <div class="modal-dialog">
+            <div class="modal-header">
+                <h2>Export Animated GIF</h2>
+                <button id="gif-modal-close" type="button" class="modal-close" title="Close">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="gif-match-info" id="gif-match-info">-</div>
+
+                <div class="form-group">
+                    <label>Tick Range</label>
+                    <div class="range-inputs">
+                        <label>From: <input type="number" id="gif-start-tick" min="0" value="0" /></label>
+                        <label>To: <input type="number" id="gif-end-tick" min="0" value="0" /></label>
+                    </div>
+                    <div class="preset-buttons">
+                        <button type="button" class="preset-btn" id="gif-preset-full">Full Match</button>
+                        <button type="button" class="preset-btn" id="gif-preset-current">Current ± 50</button>
+                        <button type="button" class="preset-btn" id="gif-preset-first100">First 100 Ticks</button>
+                        <button type="button" class="preset-btn" id="gif-preset-last100">Last 100 Ticks</button>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="gif-fps">Speed / FPS</label>
+                        <select id="gif-fps">
+                            <option value="5">5 fps (Slow)</option>
+                            <option value="10" selected>10 fps (Normal)</option>
+                            <option value="15">15 fps (Fast)</option>
+                            <option value="20">20 fps (Very Fast)</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="gif-step">Tick Step</label>
+                        <select id="gif-step">
+                            <option value="1" selected>Every tick (1x)</option>
+                            <option value="2">Every 2 ticks (2x)</option>
+                            <option value="5">Every 5 ticks (5x)</option>
+                            <option value="10">Every 10 ticks (10x)</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="gif-cell">Resolution</label>
+                        <select id="gif-cell">
+                            <option value="3">Small (300px)</option>
+                            <option value="4" selected>Medium (400px)</option>
+                            <option value="6">Large (600px)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="gif-summary" id="gif-summary">
+                    <span id="gif-frame-count">-</span> frames · <span id="gif-duration">-</span> sec duration · est. <span id="gif-est-size">-</span>
+                </div>
+
+                <div class="gif-progress-wrap" id="gif-progress-wrap" hidden>
+                    <div class="gif-spinner"></div>
+                    <span id="gif-progress-text">Generating GIF on server…</span>
+                </div>
+
+                <div class="gif-preview-wrap" id="gif-preview-wrap" hidden>
+                    <img id="gif-preview-img" alt="GIF Preview" />
+                    <div class="gif-preview-meta" id="gif-preview-meta"></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" id="gif-modal-cancel" class="btn-secondary">Cancel</button>
+                <button type="button" id="gif-generate-btn" class="btn-primary">Generate & Download</button>
+            </div>
+        </div>
+    </div>
 </div>
 <script type="module" src="./app.js"></script>
 </body>
