@@ -1,71 +1,71 @@
-# Screeps: Arena 内部 API リバースエンジニアリング手法ガイド
+# Screeps: Arena Internal API Reverse Engineering Guide
 
-本ドキュメントでは、起動中の Screeps: Arena（Steam / Electron アプリ）から `SIGUSR1` と Chrome DevTools Protocol (CDP) を駆使して内部 API や対戦履歴エンドポイントを特定・探索した実際の手法を解説します。
+This document explains the practical methodology used to discover and explore the internal APIs and match history endpoints of Screeps: Arena by leveraging `SIGUSR1` and the Chrome DevTools Protocol (CDP) on the running desktop client (Steam / Electron app).
 
-自身の手元でも 100% 再現できるように、順を追って手順とコードを記載しています。
+Every step and code snippet is detailed in order so that it can be reproduced locally.
 
 ---
 
-## 全体アーキテクチャ
+## Overall Architecture
 
-Screeps: Arena は **Electron** で構築されており、バックエンド API (`arena.screeps.com/api`) と通信しています。
-外部の `curl` やスクリプトから直接 API を叩くと、Steam の認証セッションが存在しないため `401 Unauthorized` で弾かれます。
+Screeps: Arena is built with **Electron** and communicates with the backend API (`arena.screeps.com/api`).
+When making direct requests via `curl` or external scripts, requests are rejected with `401 Unauthorized` because they lack a valid Steam authentication session.
 
-しかし、**起動中のデスクトップアプリ内部（Renderer プロセス）から `fetch()` を実行すれば、アプリが保持する認証 Cookie やヘッダーが自動的に付与される**ため、正規のリクエストとして処理されます。
+However, **executing `fetch()` directly from within the running desktop app (the Renderer process) automatically includes the authenticated cookies and headers managed by the application**, allowing the request to be processed normally.
 
 ```mermaid
 sequenceDiagram
     autonumber
-    participant Terminal as 開発者 / Node.js
+    participant Terminal as Developer / Node.js
     participant Electron as Screeps Arena (Main Process)
-    participant Renderer as UI 画面 (Renderer Process)
+    participant Renderer as UI View (Renderer Process)
     participant API as arena.screeps.com/api
 
     Terminal->>Electron: kill -SIGUSR1 <PID>
-    Note over Electron: Node.js Debugger がポート 9229 で開く
-    Terminal->>Electron: CDP WebSocket 接続 (ws://127.0.0.1:9229)
+    Note over Electron: Node.js debugger opens on port 9229
+    Terminal->>Electron: CDP WebSocket connection (ws://127.0.0.1:9229)
     Terminal->>Renderer: webContents.executeJavaScript("fetch(...)")
-    Renderer->>API: 認証セッション付きで API 呼び出し
-    API-->>Renderer: JSON レスポンス
-    Renderer-->>Terminal: データ取得完了！
+    Renderer->>API: Call API with authenticated session
+    API-->>Renderer: JSON response
+    Renderer-->>Terminal: Data retrieved!
 ```
 
 ---
 
-## ステップ 1: プロセス特定とアプリ本体パスの確認
+## Step 1: Identifying the Process and Application Path
 
-まずは稼働中の Screeps: Arena プロセスを探します。
+First, locate the running Screeps: Arena process:
 
 ```bash
 ps ax -o pid=,command= | grep -i '[s]creeps_arena.app/Contents/MacOS/screeps_arena' | grep -v Helper
 ```
 
-出力例:
+Example output:
 ```text
 92019 /Users/.../Steam/steamapps/common/ScreepsArena/screeps_arena.app/Contents/MacOS/screeps_arena
 ```
 
-ここで得られる情報：
+Key information obtained here:
 - **PID**: `92019`
-- **アプリリソースの場所**: `.../screeps_arena.app/Contents/Resources/app`
+- **Application resources path**: `.../screeps_arena.app/Contents/Resources/app`
 
 ---
 
-## ステップ 2: SIGUSR1 でデバッガを開く
+## Step 2: Opening the Debugger with SIGUSR1
 
-Node.js は、実行中プロセスに `SIGUSR1` シグナルを受信すると内部インスペクターを有効化する組み込み機能を持っています。
+Node.js has a built-in feature where sending a `SIGUSR1` signal to a running process activates its internal inspector agent:
 
 ```bash
 kill -SIGUSR1 92019
 ```
 
-開いたかどうかを確認します：
+Verify that the inspector opened:
 
 ```bash
 curl -s http://127.0.0.1:9229/json
 ```
 
-出力例:
+Example output:
 ```json
 [
   {
@@ -78,29 +78,29 @@ curl -s http://127.0.0.1:9229/json
 ]
 ```
 
-この `webSocketDebuggerUrl` を使って、Chrome DevTools Protocol (CDP) でメインプロセスを直接操作できるようになります。
+Using this `webSocketDebuggerUrl`, we can directly control the main process via the Chrome DevTools Protocol (CDP).
 
 ---
 
-## ステップ 3: CDP で Renderer（ブラウザ画面）に入り込む
+## Step 3: Accessing the Renderer (Browser UI) via CDP
 
-Electron では、メインプロセスから `BrowserWindow.getAllWindows()[0].webContents.executeJavaScript(...)` を呼ぶことで、画面側の JavaScript コンテキストにコードを注入できます。
+In Electron, code can be evaluated in the UI's JavaScript context from the main process by calling `BrowserWindow.getAllWindows()[0].webContents.executeJavaScript(...)`.
 
-これを Node.js スクリプトから行う最小限のコード（`src/cdp.ts` 内の実装）:
+Here is the minimal Node.js code to achieve this (as implemented in `src/cdp.ts`):
 
 ```javascript
 const Module = process.mainModule ? process.mainModule.constructor : (new Function('return this'))().module.constructor;
 const req = Module.createRequire(process.cwd() + '/');
 const { BrowserWindow } = req('electron');
 const win = BrowserWindow.getAllWindows()[0];
-return await win.webContents.executeJavaScript(`/* 実行したいJS */`);
+return await win.webContents.executeJavaScript(`/* JS code to execute */`);
 ```
 
 ---
 
-## ステップ 4: 現在地 (URL) と LocalStorage の偵察
+## Step 4: Inspecting Current URL and LocalStorage
 
-画面側で何が起きているかを探るため、以下の式を評価しました：
+To investigate what is happening inside the UI, evaluate the following expression:
 
 ```javascript
 ({
@@ -110,30 +110,30 @@ return await win.webContents.executeJavaScript(`/* 実行したいJS */`);
 })
 ```
 
-実行すると、以下のような決定的な情報が手に入りました：
+Running this yielded critical insights:
 
-1. **現在の URL**:
+1. **Current URL**:
    `file:///.../dist/#/arenas/6a86d8c454a3948a1e35f90c/games/6a9a5b41688548fac5bd8618`
-   - `6a86d8c454a3948a1e35f90c` が Pain and Gain のアリーナ ID だと判明！
-   - `6a9a5b41688548fac5bd8618` は直前の対戦 Game ID だと判明！
+   - Identified `6a86d8c454a3948a1e35f90c` as the Arena ID for *Pain and Gain*!
+   - Identified `6a9a5b41688548fac5bd8618` as the Game ID of the most recent match!
 
 2. **LocalStorage**:
    - `arena_local_settings_6a86d8c454a3948a1e35f90c_running_game`:
      `{"sourceFolder":"/Users/arukuka/ScreepsArena/season4-pain_and_gain", ...}`
    - `6a9a5b41688548fac5bd8618_viewed: "true"`
-     過去に表示したゲーム ID が大量に `[gameId]_viewed` として保存されていることを発見。
+     Discovered that previously viewed match IDs are persisted in bulk as `[gameId]_viewed`.
 
 ---
 
-## ステップ 5: アプリ本体の JS ソースコードを読む
+## Step 5: Reading the Application's JavaScript Source Code
 
-「画面側がどの API を叩いているか」を知る一番確実な方法は、**アプリ自身のバンドルコードを調べること**です。
+The most reliable way to find out which APIs the UI communicates with is to **inspect the application's client bundle itself**.
 
-`document.querySelectorAll('script')` を見ると、以下のスクリプトが読み込まれていました：
+Checking `document.querySelectorAll('script')` revealed that the following scripts were loaded:
 - `dist/polyfills.js`
 - `dist/main.js`
 
-Electron の Renderer は `file://` プロトコルで動いているため、Renderer 内から `fetch()` でローカルの `main.js`（数MBのバンドル全体）を文字列として一瞬で読み取れます：
+Because the Electron Renderer runs under the `file://` protocol, `fetch()` can be used from within the Renderer to read local `main.js` (a multi-megabyte bundle) into a string in an instant:
 
 ```javascript
 const res = await fetch("file:///Users/.../dist/main.js");
@@ -142,17 +142,17 @@ const code = await res.text();
 
 ---
 
-## ステップ 6: ソースコード grep による API 発掘
+## Step 6: Uncovering APIs via Code Grep
 
-読み込んだ `code` に対して正規表現で検索をかけます。
+We can search the loaded `code` string using regular expressions.
 
-### 1. `apiUrl` の使われ方を抽出
+### 1. Extracting `apiUrl` Usages
 ```javascript
 const regex = /apiUrl[^\n;]{1,100}/g;
 const matches = code.match(regex);
 ```
 
-すると、Angular の HttpClient 呼び出しが続々と出現しました：
+This immediately revealed Angular `HttpClient` calls:
 ```text
 ${environment.apiUrl}/user/${userId}/saved-games
 ${environment.apiUrl}/arena/${arenaId}/rating-history
@@ -161,8 +161,8 @@ ${environment.apiUrl}/season/current
 ${environment.apiUrl}/season/${seasonId}/arenas
 ```
 
-### 2. メソッド定義の文脈を調査
-Angular のサービス定義を調べるため、`"rating-history"` や `"last-games"` の周辺コードを切り出します：
+### 2. Inspecting Method Context
+To inspect Angular service definitions, we extracted the surrounding code for terms like `"rating-history"` and `"last-games"`:
 
 ```javascript
 function getContext(term, length = 800) {
@@ -171,17 +171,17 @@ function getContext(term, length = 800) {
 }
 ```
 
-これにより、以下の事実が完全に判明しました：
-- レーティング対戦の履歴は `/api/arena/{arenaId}/rating-history` を叩いている。
-- クエリパラメータとして `limit`（取得件数）と `offset`（ページネーション）を受け取る。
-- ユーザー情報は `/api/auth/me` で取得できる。
-- シーズン情報 `/api/season/current` からアリーナ一覧 `/api/season/{id}/arenas` が取得できる。
+This confirmed the following API specifications:
+- Ranked match history is fetched via `/api/arena/{arenaId}/rating-history`.
+- It accepts query parameters `limit` (number of items) and `offset` (pagination).
+- Current user profile can be retrieved via `/api/auth/me`.
+- The list of arenas `/api/season/{id}/arenas` can be retrieved starting from the current season at `/api/season/current`.
 
 ---
 
-## ステップ 7: 実際に API を叩いて検証する
+## Step 7: Verifying via Live API Calls
 
- Renderer コンテキスト内で直接 fetch を実行：
+Executing fetch directly within the Renderer context:
 
 ```javascript
 const res = await fetch(
@@ -192,7 +192,7 @@ const data = await res.json();
 console.log(data);
 ```
 
-返ってきたレスポンス：
+Received response:
 ```json
 {
   "ok": 1,
@@ -219,13 +219,13 @@ console.log(data);
 }
 ```
 
-ここで、ユーザーがプレイした 15 試合の全メタデータ（勝敗、相手、Ticks、ゲームID）が完璧に取得できたことが確認できました。
+This confirmed that full metadata for 15 played matches (outcomes, opponents, ticks, game IDs) could be retrieved seamlessly.
 
 ---
 
-## まとめ・自分で試すためのワンライナー
+## Summary & One-Liner to Try It Yourself
 
-起動中の Screeps: Arena があれば、以下のスクリプトを Node.js で動かすだけで誰でも手元で内部状態を覗き見ることができます：
+As long as Screeps: Arena is running, anyone can inspect internal state locally with Node.js using this one-liner:
 
 ```bash
 node -e '
@@ -241,4 +241,4 @@ import("./dist/src/sync.js").then(async ({ openArenaSession }) => {
 '
 ```
 
-Electron アプリは本質的に「Chromium + Node.js」であるため、インスペクターを開くことさえできれば、Web ブラウザの DevTools コンソールでデバッグするのと全く同じ自由度で内部を調査することができます。
+Since Electron applications are essentially "Chromium + Node.js", enabling the inspector grants full freedom to inspect and interact with the application, exactly like using the DevTools console in a web browser.
