@@ -224,4 +224,7 @@ npm test          # Build and run node --test (uses real match fixtures)
 
 ## License
 
-MIT
+This project is licensed under the **GNU General Public License v3.0 (or later) with the Screeps Arena Tools Plugin Exception** — see the [LICENSE](LICENSE) file for details.
+
+- **Core Codebase**: Licensed under GPLv3. If you modify and convey/distribute the core codebase, your modifications must be released under GPLv3.
+- **Plugin Exception**: Independent plugins and scripts interacting solely through documented plugin APIs (e.g. `--plugins` or viewer hooks) are free from copyleft restrictions and can be licensed under any terms (including proprietary / closed-source), with no requirement to publish source code.

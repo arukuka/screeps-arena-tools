@@ -153,3 +153,14 @@ http://localhost:5544/?plugin=/plugins/macro-zones.js
 ## Example
 
 [`examples/plugins/macro-zones.js`](../examples/plugins/macro-zones.js) — Renders macro zone allocations as creep overlay rings and inspector bar charts using `@zones` and `@creepZone`.
+
+---
+
+## Plugin Licensing
+
+Under the **Screeps Arena Tools Plugin Exception** (GNU GPLv3 Section 7), independent plugins communicating solely via the plugin API are exempt from GPL copyleft requirements:
+
+- **No obligation to open-source:** You are free to keep your plugin code private or closed-source.
+- **Custom licensing:** You may distribute your plugins under any license of your choice (MIT, Apache, proprietary, etc.).
+- See [`LICENSE`](../LICENSE) for the full legal text.
+
