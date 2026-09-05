@@ -3,16 +3,18 @@
 A zero-dependency, buildless toolchain to **fetch, normalize, and view** [Screeps: Arena](https://arena.screeps.com/) match replays. Runs directly on Node.js.
 
 - **sync & watch** — Automatically sync match history and auto-download new replays as soon as games finish
+- **collect** — Automate match execution vs Idle opponent and extract console logs
 - **fetch** — Fetch match replays and console logs accessible by your account via the running Screeps: Arena client
 - **normalize** — Compress raw per-tick complete snapshots (280MB+ per match) into deltas of **tens of kilobytes**
 - **view** — Replay matches in your browser: terrain, structures, creeps, attacks/heals, energy, and flag captures
-- **gif** — Render match replays to animated GIFs directly from CLI or visualizer with zero dependencies
+- **gif** — Export lightweight animated GIFs of match replays without dependencies
 - **plugins** — Overlay bot-specific internal state **without forking the codebase**
 
 ```bash
-npx screeps-arena-tools sync "Pain and Gain"  # Auto-fetch all recent replays
-npx screeps-arena-tools sync --watch         # Monitor & auto-download in background
-npx screeps-arena-tools view                 # http://localhost:5544/
+npx screeps-arena-tools collect "Pain and Gain" --count 10  # Auto-run 10 matches & collect logs
+npx screeps-arena-tools sync "Pain and Gain"                # Auto-fetch all recent replays
+npx screeps-arena-tools sync --watch                       # Monitor & auto-download in background
+npx screeps-arena-tools view                               # http://localhost:5544/
 ```
 
 ---
@@ -29,6 +31,52 @@ It does not forge credentials; instead, **it delegates fetching to your already-
 ---
 
 ## Usage
+
+### Automated Match Runner & Log Collection
+
+Automatically run test matches against the Idle opponent in the running Screeps: Arena client, and extract game console logs directly via the authenticated API:
+
+```bash
+screeps-arena-tools collect                                  # Run 10 matches, filter ARENA_DUMP logs
+screeps-arena-tools collect "Pain and Gain" -o collected.log # Save collected logs to file
+screeps-arena-tools collect --stdout                         # Stream log lines directly to stdout (useful for piping)
+screeps-arena-tools collect --filter ""                      # Collect all console logs without filtering
+screeps-arena-tools collect --count 20                       # Run 20 matches
+screeps-arena-tools collect --continuous                     # Run continuously until Ctrl+C
+```
+
+```
+=== Screeps: Arena Automated Match Runner & Log Collector ===
+
+Found Screeps: Arena process (PID 49767)
+Connected via inspector (ws://127.0.0.1:9229/...)
+Target Arena:   Pain and Gain (Basic) [6a86d8c454a3948a1e35f90c]
+
+Starting collection loop (target: 10 matches)...
+
+[Match #1] Triggering match vs Idle opponent... Started.
+  Waiting for match to finish... Finished! (ID: 6a9bcf52...)
+  Fetching logs... Retrieved 26 line(s)
+  Progress: 1/10 matches completed
+```
+
+#### TypeScript / Programmatic API
+
+You can also import and use `collect` directly in your own scripts or bots:
+
+```ts
+import { collect } from "screeps-arena-tools";
+
+await collect({
+    arena: "Pain and Gain",
+    count: 10,
+    filter: "ARENA_DUMP",
+    onMatch: async ({ matchNumber, gameId, logs }) => {
+        console.log(`Match #${matchNumber} (${gameId}) produced ${logs.length} logs`);
+        // Process logs (e.g. save to your custom map library or database)
+    },
+});
+```
 
 ### Auto-Sync Replays & Match History
 

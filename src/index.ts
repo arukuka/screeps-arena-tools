@@ -11,4 +11,5 @@ export { getCurrentUser, getSeasonArenas, resolveArena, fetchRatingHistory } fro
 export { drawBoard, drawStructures, drawCreeps, drawActions, drawTerrain } from "./board_render.js";
 export { SoftwareCanvas } from "./software_canvas.js";
 export { GifEncoder, generateReplayGif } from "./gif.js";
+export { collect, type CollectOptions, type MatchResult } from "./collect.js";
 export * from "./types.js";

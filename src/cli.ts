@@ -20,6 +20,7 @@ import { describeReplay, isReplayDoc, readReplay, writeReplay } from "./replay_i
 import { DEFAULT_PORT, listReplays, resolveServeOptions, serve } from "./serve.js";
 import { getExistingMatchIds, openArenaSession, syncReplays, watchReplays } from "./sync.js";
 import { getCurrentUser, resolveArena, fetchRatingHistory } from "./arena_api.js";
+import { collect } from "./collect.js";
 import type { ReplayDoc } from "./types.js";
 
 const CURRENT_DIR = dirname(fileURLToPath(import.meta.url));
@@ -29,6 +30,10 @@ const ROOT = CURRENT_DIR.endsWith("dist/src") || CURRENT_DIR.endsWith("dist\\src
 
 const USAGE = `
 Screeps: Arena Tools
+
+  screeps-arena-tools collect [arena] [--count <n>] [-o <file>] [--filter <str>] [--stdout] [--continuous]
+      Automate match execution and log collection via running Screeps: Arena.
+      Plays matches in test mode against Idle opponent and extracts console logs.
 
   screeps-arena-tools history [arena] [--limit <n>]
       List match history for an arena (default: currently active arena).
@@ -408,11 +413,32 @@ async function cmdSync(positional: string[], flags: Record<string, string | bool
     console.log(`\n  To view replays: screeps-arena-tools view`);
 }
 
+async function cmdCollect(positional: string[], flags: Record<string, string | boolean>): Promise<void> {
+    const arena = positional[0] ?? (typeof flags.arena === "string" ? flags.arena : undefined);
+    const count = typeof flags.count === "string" ? parseInt(flags.count, 10) : undefined;
+    const continuous = Boolean(flags.continuous ?? flags.watch);
+    const out = typeof flags.o === "string" ? flags.o : typeof flags.out === "string" ? flags.out : undefined;
+    const filter = typeof flags.filter === "string" ? flags.filter : undefined;
+    const stdout = Boolean(flags.stdout);
+
+    await collect({
+        arena,
+        count,
+        continuous,
+        out,
+        filter,
+        stdout,
+    });
+}
+
 async function main(): Promise<void> {
     const [command, ...rest] = process.argv.slice(2);
     const { positional, flags } = parseArgs(rest);
 
     switch (command) {
+        case "collect":
+            await cmdCollect(positional, flags);
+            break;
         case "history":
             await cmdHistory(positional, flags);
             break;
