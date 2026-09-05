@@ -26,6 +26,10 @@ html, body {
     font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
+[hidden] {
+    display: none !important;
+}
+
 #app {
     display: flex;
     flex-direction: column;

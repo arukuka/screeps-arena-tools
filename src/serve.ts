@@ -238,6 +238,31 @@ export async function handleRequest(opts: ServeOptions, req: IncomingMessage, re
         return;
     }
 
+    // Redirect / to /replays
+    if (path === "/") {
+        res.writeHead(302, { Location: "/replays" });
+        res.end();
+        return;
+    }
+
+    // SPA Page Routes: /replays, /fame, /replays/:id (without file extensions)
+    const isSpaPage =
+        path === "/replays" ||
+        path === "/fame" ||
+        (path.startsWith("/replays/") &&
+            !path.endsWith(".json") &&
+            !path.endsWith(".gz") &&
+            !path.endsWith(".js") &&
+            !path.endsWith(".css"));
+
+    if (isSpaPage) {
+        const indexHtml = safeJoin(opts.viewerDir, "index.html");
+        if (indexHtml !== null && existsSync(indexHtml)) {
+            sendFile(res, indexHtml);
+            return;
+        }
+    }
+
     const routes: Array<[string, string | null]> = [
         ["/replays/", opts.replayDir],
         ["/plugins/", opts.pluginDir],

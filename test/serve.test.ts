@@ -65,3 +65,42 @@ test("resolves default serve options", () => {
 test("allows explicitly disabling plugin directory", () => {
     assert.equal(resolveServeOptions(ROOT, { pluginDir: null }).pluginDir, null);
 });
+
+test("redirects / to /replays and serves index.html for SPA routes", async () => {
+    const { serve } = await import("../src/serve.js");
+    const http = await import("node:http");
+
+    const opts = resolveServeOptions(ROOT, { port: 5789 });
+    const srv = serve(opts);
+
+    const get = (path: string) =>
+        new Promise<{ status: number; location?: string; type?: string }>((res) => {
+            http.get(`http://localhost:5789${path}`, (r) => {
+                res({
+                    status: r.statusCode ?? 0,
+                    location: r.headers.location,
+                    type: r.headers["content-type"],
+                });
+            });
+        });
+
+    try {
+        const root = await get("/");
+        assert.equal(root.status, 302);
+        assert.equal(root.location, "/replays");
+
+        const replays = await get("/replays");
+        assert.equal(replays.status, 200);
+        assert.ok(replays.type?.includes("text/html"));
+
+        const fame = await get("/fame");
+        assert.equal(fame.status, 200);
+        assert.ok(fame.type?.includes("text/html"));
+
+        const match = await get("/replays/XTTCQ7DA4T");
+        assert.equal(match.status, 200);
+        assert.ok(match.type?.includes("text/html"));
+    } finally {
+        srv.close();
+    }
+});

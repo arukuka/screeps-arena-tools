@@ -660,9 +660,10 @@ async function loadReplayList(): Promise<void> {
                 for (const other of el.querySelectorAll(".match")) other.classList.remove("active");
                 raw.classList.add("active");
                 const file = raw.dataset.file;
-                if (file) {
-                    const res = await fetch(`/replays/${encodeURIComponent(file)}`);
-                    acceptDocument(await res.json(), file);
+                const shortId = raw.dataset.shortId;
+                const targetRef = shortId || file;
+                if (targetRef) {
+                    navigate(`/replays/${encodeURIComponent(targetRef)}`);
                 }
             });
         }
@@ -674,11 +675,13 @@ async function loadReplayList(): Promise<void> {
 function renderReplayItem(r: any): string {
     const fileEscaped = escapeHtml(r.file);
     const sizeKb = (r.bytes / 1024).toFixed(0);
+    const shortId = r.meta?.shortId ?? "";
+    const gameId = r.meta?.gameId ?? "";
 
     if (!r.meta || !Array.isArray(r.meta.players) || r.meta.players.length === 0) {
         const modStr = escapeHtml(r.modified.slice(0, 16).replace("T", " "));
         return `
-            <button class="match" data-file="${fileEscaped}">
+            <button class="match" data-file="${fileEscaped}" data-short-id="${escapeHtml(shortId)}" data-game-id="${escapeHtml(gameId)}">
                 <div class="match-file">${fileEscaped}</div>
                 <div class="match-sub row2">${sizeKb} KB — ${modStr}</div>
             </button>`;
@@ -706,14 +709,14 @@ function renderReplayItem(r: any): string {
     const metaDetails = [ticksStr, `${sizeKb} KB`, dateStr].filter(Boolean).join(" · ");
 
     return `
-        <button class="match" data-file="${fileEscaped}">
+        <button class="match" data-file="${fileEscaped}" data-short-id="${escapeHtml(shortId)}" data-game-id="${escapeHtml(gameId)}">
             <div class="match-players">
                 ${playersHtml}
                 ${drawBadge}
             </div>
             <div class="match-sub row2">
                 <div class="match-file" title="${fileEscaped}">${fileEscaped}</div>
-                <div class="match-details">${escapeHtml(metaDetails)}</div>
+                <div class="match-meta-line">${metaDetails}</div>
             </div>
         </button>`;
 }
@@ -1042,39 +1045,101 @@ await loadPlugins();
 await loadReplayList();
 
 // ============================================================
-// Fame Status Dashboard & Tabs
+// Client-Side Router & Tab Management
 // ============================================================
 
 let currentTab: "replays" | "fame" = "replays";
 let fameNextResetUtc: string | null = null;
 let fameCountdownInterval: any = null;
 
-function switchTab(tab: "replays" | "fame"): void {
-    currentTab = tab;
+function navigate(urlPath: string, push = true): void {
+    if (push && window.location.pathname !== urlPath) {
+        history.pushState(null, "", urlPath);
+    }
+    handleRoute(urlPath);
+}
+
+async function loadMatchByIdOrFile(matchParam: string): Promise<void> {
+    const replayListEl = $("replay-list");
+    const matches = replayListEl.querySelectorAll<HTMLElement>(".match");
+    for (const m of matches) {
+        const file = m.dataset.file;
+        const shortId = m.dataset.shortId;
+        const gameId = m.dataset.gameId;
+        if (file === matchParam || shortId === matchParam || gameId === matchParam || (file && file.includes(matchParam))) {
+            matches.forEach((other) => other.classList.remove("active"));
+            m.classList.add("active");
+            if (file) {
+                const res = await fetch(`/replays/${encodeURIComponent(file)}`);
+                acceptDocument(await res.json(), file);
+            }
+            return;
+        }
+    }
+
+    try {
+        const res = await fetch("/api/replays");
+        const data = await res.json();
+        const found = data.replays?.find((r: any) =>
+            r.file === matchParam ||
+            r.meta?.shortId === matchParam ||
+            r.meta?.gameId === matchParam ||
+            r.file.includes(matchParam)
+        );
+        if (found) {
+            const fRes = await fetch(`/replays/${encodeURIComponent(found.file)}`);
+            acceptDocument(await fRes.json(), found.file);
+            const matchBtn = replayListEl.querySelector<HTMLElement>(`[data-file="${CSS.escape(found.file)}"]`);
+            if (matchBtn) {
+                matches.forEach((other) => other.classList.remove("active"));
+                matchBtn.classList.add("active");
+            }
+        }
+    } catch (e: any) {
+        console.warn("Failed to load match by ref:", matchParam, e);
+    }
+}
+
+async function handleRoute(path = window.location.pathname): Promise<void> {
     const btnReplays = $("tab-btn-replays");
     const btnFame = $("tab-btn-fame");
     const viewReplays = $("view-replays");
     const viewFame = $("view-fame");
 
-    if (tab === "replays") {
-        btnReplays.classList.add("active");
-        btnFame.classList.remove("active");
-        viewReplays.hidden = false;
-        viewFame.hidden = true;
-        resizeBoard();
-    } else {
+    if (path === "/fame") {
+        currentTab = "fame";
         btnFame.classList.add("active");
         btnReplays.classList.remove("active");
         viewReplays.hidden = true;
         viewFame.hidden = false;
         loadFameStatus();
+        return;
+    }
+
+    // Default to /replays
+    currentTab = "replays";
+    btnReplays.classList.add("active");
+    btnFame.classList.remove("active");
+    viewReplays.hidden = false;
+    viewFame.hidden = true;
+    resizeBoard();
+
+    if (path.startsWith("/replays/")) {
+        const matchId = decodeURIComponent(path.slice("/replays/".length)).trim();
+        if (matchId) {
+            await loadMatchByIdOrFile(matchId);
+        }
     }
 }
 
 function initTabs(): void {
-    $("tab-btn-replays").addEventListener("click", () => switchTab("replays"));
-    $("tab-btn-fame").addEventListener("click", () => switchTab("fame"));
+    $("tab-btn-replays").addEventListener("click", () => navigate("/replays"));
+    $("tab-btn-fame").addEventListener("click", () => navigate("/fame"));
     $("fame-refresh-btn").addEventListener("click", () => loadFameStatus());
+
+    window.addEventListener("popstate", () => {
+        handleRoute(window.location.pathname);
+    });
 
     // Countdown tick
     fameCountdownInterval = setInterval(() => {
@@ -1142,39 +1207,9 @@ function renderFameDashboard(data: any): void {
         btn.addEventListener("click", async () => {
             const shortId = btn.dataset.shortId;
             const gameId = btn.dataset.gameId;
-            if (!shortId && !gameId) return;
-
-            // Search for matching replay in sidebar
-            const replayListEl = $("replay-list");
-            const matches = replayListEl.querySelectorAll<HTMLElement>(".match");
-            let targetMatchEl: HTMLElement | null = null;
-            for (const m of matches) {
-                const text = m.innerText || "";
-                if ((shortId && text.includes(shortId)) || (gameId && text.includes(gameId))) {
-                    targetMatchEl = m;
-                    break;
-                }
-            }
-
-            if (targetMatchEl) {
-                switchTab("replays");
-                targetMatchEl.click();
-            } else if (shortId) {
-                // Fetch directly via shortId
-                switchTab("replays");
-                try {
-                    const res = await fetch(`/api/replays`);
-                    const rData = await res.json();
-                    const file = rData.replays?.find((r: any) => r.meta?.shortId === shortId || r.file.includes(shortId));
-                    if (file) {
-                        const fileRes = await fetch(`/replays/${encodeURIComponent(file.file)}`);
-                        acceptDocument(await fileRes.json(), file.file);
-                    } else {
-                        alert(`Replay for ${shortId} is not synced yet. Run: screeps-arena-tools sync`);
-                    }
-                } catch (e: any) {
-                    alert(`Cannot load match: ${e.message}`);
-                }
+            const targetRef = shortId || gameId;
+            if (targetRef) {
+                navigate(`/replays/${encodeURIComponent(targetRef)}`);
             }
         });
     }
@@ -1287,6 +1322,13 @@ function renderFameCard(a: any): string {
 }
 
 initTabs();
+
+// Initial route handling
+if (window.location.pathname === "/" || window.location.pathname === "") {
+    navigate("/replays", false);
+} else {
+    handleRoute(window.location.pathname);
+}
 
 // Automatically check for newly synced replays every 10 seconds, and refresh Fame if tab active
 setInterval(() => {
