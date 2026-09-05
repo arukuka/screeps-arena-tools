@@ -203,6 +203,9 @@ function readResult(result: any, players: PlayerInfo[], firstPlayerIndex = 0): M
     };
 }
 
+/** Distinct log-failure reasons kept in `meta.logChunks.errors`. */
+const MAX_LOG_ERRORS = 5;
+
 /**
  * Create an incremental normalizer.
  *
@@ -240,6 +243,8 @@ export function createNormalizer(init: NormalizerInit = {}): Normalizer {
     const seen = new Set<number>();
     /** Tick to console log text. */
     const logs: Record<string, string> = {};
+    /** Console log chunk retrieval outcome. See `meta.logChunks`. */
+    const logChunks = { requested: 0, fetched: 0, failed: 0, errors: [] as string[] };
     /** Tick to metadata parsed by splitLogLine. */
     const extByTick = new Map<number, Record<string, unknown[]>>();
 
@@ -427,6 +432,19 @@ export function createNormalizer(init: NormalizerInit = {}): Normalizer {
         },
 
         /** Normalized replay document */
+        noteLogChunk(result: { ok: boolean; status?: number; statusText?: string }): void {
+            logChunks.requested++;
+            if (result.ok) {
+                logChunks.fetched++;
+                return;
+            }
+            logChunks.failed++;
+            const reason = `${result.status ?? "?"} ${result.statusText ?? ""}`.trim();
+            if (logChunks.errors.length < MAX_LOG_ERRORS && !logChunks.errors.includes(reason)) {
+                logChunks.errors.push(reason);
+            }
+        },
+
         finish(): ReplayDoc {
             for (const tick of ticks) {
                 const ext = extByTick.get(tick.k);
@@ -448,6 +466,7 @@ export function createNormalizer(init: NormalizerInit = {}): Normalizer {
                     result: meta.result,
                     width,
                     height,
+                    logChunks: logChunks.requested > 0 ? { ...logChunks } : null,
                 },
                 terrain: encodeTerrain(digits),
                 objects: [...objects.values()],
@@ -481,7 +500,9 @@ export function normalizeMatch(raw: any, options: { shortId?: string | null } = 
         .sort((a, b) => a - b);
     for (const c of chunks) {
         n.pushFrames(raw.replays[String(c)]);
-        if (raw.logs) n.pushLogs(raw.logs[String(c)]);
+        const chunkLogs = raw.logs ? raw.logs[String(c)] : undefined;
+        if (chunkLogs !== undefined) n.pushLogs(chunkLogs);
+        n.noteLogChunk({ ok: chunkLogs !== undefined, statusText: "absent in raw dump" });
     }
     return n.finish();
 }

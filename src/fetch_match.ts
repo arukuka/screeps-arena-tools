@@ -74,12 +74,31 @@ export async function fetchGameWithSession(
         if (Array.isArray(frames)) normalizer.pushFrames(frames);
 
         const logs: any = await session.evaluateInRenderer(fetchExpr(`${API}/game/${gameId}/log/${t}`));
-        if (logs && !logs.__error) normalizer.pushLogs(logs);
+        if (logs && !logs.__error) {
+            normalizer.pushLogs(logs);
+            normalizer.noteLogChunk({ ok: true });
+        } else {
+            // Never drop this silently. Bot telemetry (`@namespace <payload>`)
+            // rides the same endpoint, so a quiet failure here empties
+            // `ticks[].e` with no visible symptom.
+            normalizer.noteLogChunk({ ok: false, status: logs?.status, statusText: logs?.statusText });
+        }
 
         report({ phase: "chunk", done: i + 1, total: targets.length, message: `tick ${t}` });
     }
 
-    return normalizer.finish();
+    const doc = normalizer.finish();
+    const stats = doc.meta.logChunks;
+    if (stats !== null && stats.failed > 0) {
+        const reasons = stats.errors.length > 0 ? ` (${stats.errors.join(", ")})` : "";
+        report({
+            phase: "log-warn",
+            message:
+                `console logs unavailable for ${stats.failed}/${stats.requested} chunks${reasons}. ` +
+                "`logs` and `ticks[].e` will be incomplete.",
+        });
+    }
+    return doc;
 }
 
 /**

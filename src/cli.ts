@@ -378,6 +378,9 @@ async function cmdSync(positional: string[], flags: Record<string, string | bool
                     console.log(`  ${info.message}`);
                 } else if (info.phase === "watch-error") {
                     console.error(`  Warning: ${info.message}`);
+                } else if (info.phase === "log-warn") {
+                    if (process.stdout.isTTY) process.stdout.write("\n");
+                    console.error(`  Warning: ${info.message}`);
                 } else if (info.phase === "chunk") {
                     if (process.stdout.isTTY) {
                         process.stdout.write(`\r  fetching chunk ${info.done}/${info.total} (${info.message ?? ""})   `);
@@ -407,6 +410,9 @@ async function cmdSync(positional: string[], flags: Record<string, string | bool
                 const line = `  [${currentDownloading}] chunk ${info.done}/${info.total} (${info.message ?? ""})`;
                 if (process.stdout.isTTY) process.stdout.write(`\r${line}   `);
                 else if (info.done === info.total) console.log(line);
+            } else if (info.phase === "log-warn") {
+                if (process.stdout.isTTY) process.stdout.write("\n");
+                console.error(`  Warning: [${currentDownloading}] ${info.message}`);
             }
         },
         onMatchSynced: (item, path, isNew) => {

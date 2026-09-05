@@ -19,6 +19,25 @@ export interface MatchResult {
     raw?: number | null;
 }
 
+/**
+ * Console log retrieval statistics.
+ *
+ * Without this, "the match produced no console output" and "log retrieval
+ * failed" are indistinguishable once `logs` comes out empty. Telemetry
+ * emitted by bots as `@namespace <payload>` travels through the same
+ * endpoint, so a silent failure here silently empties `ticks[].e` as well.
+ */
+export interface LogChunkStats {
+    /** Chunks the fetcher attempted to retrieve. */
+    requested: number;
+    /** Chunks retrieved successfully. */
+    fetched: number;
+    /** Chunks that failed to retrieve. */
+    failed: number;
+    /** Distinct failure reasons, capped at a few entries. */
+    errors: string[];
+}
+
 export interface ReplayMeta {
     shortId: string | null;
     gameId: string | null;
@@ -32,6 +51,8 @@ export interface ReplayMeta {
     result: MatchResult;
     width: number;
     height: number;
+    /** Console log retrieval statistics. `null` when not recorded. */
+    logChunks: LogChunkStats | null;
 }
 
 export interface ReplayObject {
@@ -214,6 +235,13 @@ export interface NormalizerInit {
 export interface Normalizer {
     pushFrames(frames: ReadonlyArray<any>): void;
     pushLogs(chunk: any): void;
+    /**
+     * Record the outcome of one console log chunk request.
+     *
+     * Call once per attempted chunk, whether it succeeded or not, so that
+     * `meta.logChunks` can tell an empty log apart from a failed fetch.
+     */
+    noteLogChunk(result: { ok: boolean; status?: number; statusText?: string }): void;
     finish(): ReplayDoc;
 }
 

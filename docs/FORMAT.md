@@ -38,6 +38,7 @@ Because the raw API returns **full state snapshots per tick**, this delta encodi
 | `width` / `height` | Board dimensions (derived from square root of terrain length) |
 | `players[]` | `{ slot, side, username, userId, color, codeVersion }` |
 | `result` | `{ winner, winnerName, draw, status, raw }` |
+| `logChunks` | `{ requested, fetched, failed, errors[] }` or `null`. Console log retrieval statistics — see below |
 
 **Player Slot Mapping:** Replay entity objects refer to owners only as `"player1"` or `"player2"`, while `gameData.game.users` may have a different order.
 For submitted code pairs `usersCode` (`[codeA, codeB]`), if `firstPlayerIndex` is `1`, board slots (`player1` / `player2`) are inverted (matching official client `getGamePlayers` logic). Players are mapped accordingly via `codes[].user`.
@@ -135,6 +136,34 @@ To distinguish destroyed structures from absent entities, **`hits: 0` markers** 
 `logs` maps tick number to human-readable console output. **Metadata lines are stripped** from `logs` and stored in `e`. This prevents bots logging per-tick telemetry from flooding the human log panel.
 
 See [`PLUGINS.md`](PLUGINS.md) for metadata format and `extensions` indexing.
+
+### `meta.logChunks` — telling an empty log from a failed fetch
+
+Console logs are retrieved per 100-tick chunk from a separate endpoint
+(`/api/game/{gameId}/log/{tick}`) that can fail independently of the replay frames.
+When it does, `logs` and every `ticks[].e` come back empty — which looks exactly
+like a match where the bot logged nothing.
+
+`meta.logChunks` records the outcome so the two cases stay distinguishable:
+
+```jsonc
+"logChunks": { "requested": 11, "fetched": 0, "failed": 11, "errors": ["404 Not Found"] }
+```
+
+| Key | Description |
+| --- | --- |
+| `requested` | Chunks the fetcher attempted |
+| `fetched` | Chunks retrieved successfully |
+| `failed` | Chunks that failed |
+| `errors` | Distinct failure reasons, capped at 5 entries |
+
+`null` means no chunk was ever attempted (for example, a document normalized from
+a raw dump that carried no `logs` key at all).
+
+**This matters for verification workflows.** Bot telemetry emitted as
+`@namespace <payload>` travels through this endpoint, so a silent failure here
+silently empties the telemetry channel. `fetch` and `sync` print a warning when
+`failed > 0`.
 
 ## Verification
 

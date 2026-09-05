@@ -187,3 +187,33 @@ test("silently ignores failed log chunks", () => {
 test("rejects invalid non-replay JSON input", () => {
     assert.throws(() => normalizeMatch({ hello: 1 }), /not a raw replay JSON/);
 });
+
+test("meta.logChunks distinguishes a failed log fetch from an empty log", () => {
+    const n = createNormalizer({ gameData: raw.gameData, shortId: "XTTCQ7DA4T" });
+    n.pushFrames(raw.replays["0"]);
+    n.noteLogChunk({ ok: true });
+    n.noteLogChunk({ ok: false, status: 404, statusText: "Not Found" });
+    n.noteLogChunk({ ok: false, status: 404, statusText: "Not Found" });
+
+    const stats = n.finish().meta.logChunks;
+    assert.notEqual(stats, null);
+    assert.equal(stats?.requested, 3);
+    assert.equal(stats?.fetched, 1);
+    assert.equal(stats?.failed, 2);
+    // Repeated identical reasons collapse into one entry.
+    assert.deepEqual(stats?.errors, ["404 Not Found"]);
+});
+
+test("meta.logChunks is null when no chunk was ever attempted", () => {
+    const n = createNormalizer({ gameData: raw.gameData, shortId: "XTTCQ7DA4T" });
+    n.pushFrames(raw.replays["0"]);
+    assert.equal(n.finish().meta.logChunks, null);
+});
+
+test("normalizeMatch records log chunks as absent when the raw dump carries none", () => {
+    const withoutLogs = { ...raw, logs: undefined };
+    const stats = normalizeMatch(withoutLogs, { shortId: "XTTCQ7DA4T" }).meta.logChunks;
+    assert.notEqual(stats, null);
+    assert.equal(stats?.fetched, 0);
+    assert.equal(stats?.failed, stats?.requested);
+});
