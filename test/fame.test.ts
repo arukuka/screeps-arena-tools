@@ -6,6 +6,7 @@ import {
     formatDuration,
     getNextUtcReset,
     loadFameConfig,
+    parseFameGames,
     saveDefaultFameConfig,
     type ArenaFameStatus,
 } from "../src/fame.js";
@@ -90,4 +91,117 @@ test("saveDefaultFameConfig and loadFameConfig round-trip", () => {
             unlinkSync(tempConfigPath);
         }
     }
+});
+
+test("parseFameGames correctly evaluates wins, losses, draws, and sorts matches latest first", () => {
+    const myUserId = "user_me";
+    const oppUserId = "user_opp";
+
+    const rawGames = [
+        // Match 1 (older): me is usersCode[0], score 1 => WIN
+        {
+            _id: "match_1",
+            createdAt: "2026-09-05T01:00:00.000Z",
+            codes: [
+                { _id: "code_me", user: myUserId },
+                { _id: "code_opp", user: oppUserId },
+            ],
+            users: [
+                { _id: myUserId, username: "me" },
+                { _id: oppUserId, username: "opp" },
+            ],
+            game: {
+                _id: "match_1",
+                status: "finished",
+                createdAt: "2026-09-05T01:00:00.000Z",
+                usersCode: ["code_me", "code_opp"],
+                result: { winner: 1 },
+                meta: { ticks: 500 },
+            },
+        },
+        // Match 2 (newer): me is usersCode[0], score 0 => LOSS
+        {
+            _id: "match_2",
+            createdAt: "2026-09-05T02:00:00.000Z",
+            codes: [
+                { _id: "code_me", user: myUserId },
+                { _id: "code_opp", user: oppUserId },
+            ],
+            users: [
+                { _id: myUserId, username: "me" },
+                { _id: oppUserId, username: "opp" },
+            ],
+            game: {
+                _id: "match_2",
+                status: "finished",
+                createdAt: "2026-09-05T02:00:00.000Z",
+                usersCode: ["code_me", "code_opp"],
+                result: { winner: 0 },
+                meta: { ticks: 1200 },
+            },
+        },
+        // Match 3 (latest): opp is usersCode[0], score 0 => opp lost, so me WON
+        {
+            _id: "match_3",
+            createdAt: "2026-09-05T03:00:00.000Z",
+            codes: [
+                { _id: "code_opp", user: oppUserId },
+                { _id: "code_me", user: myUserId },
+            ],
+            users: [
+                { _id: myUserId, username: "me" },
+                { _id: oppUserId, username: "opp" },
+            ],
+            game: {
+                _id: "match_3",
+                status: "finished",
+                createdAt: "2026-09-05T03:00:00.000Z",
+                usersCode: ["code_opp", "code_me"],
+                result: { winner: 0 },
+                meta: { ticks: 800 },
+            },
+        },
+        // Match 4 (draw): score 0.5 => DRAW
+        {
+            _id: "match_4",
+            createdAt: "2026-09-05T02:30:00.000Z",
+            codes: [
+                { _id: "code_me", user: myUserId },
+                { _id: "code_opp", user: oppUserId },
+            ],
+            users: [
+                { _id: myUserId, username: "me" },
+                { _id: oppUserId, username: "opp" },
+            ],
+            game: {
+                _id: "match_4",
+                status: "finished",
+                createdAt: "2026-09-05T02:30:00.000Z",
+                usersCode: ["code_me", "code_opp"],
+                result: { winner: 0.5 },
+                meta: { ticks: 2000 },
+            },
+        },
+    ];
+
+    const { games, wins, losses, draws } = parseFameGames(rawGames, myUserId);
+
+    assert.equal(wins, 2);
+    assert.equal(losses, 1);
+    assert.equal(draws, 1);
+    assert.equal(games.length, 4);
+
+    // Verify sorted latest first: match_3 (03:00), match_4 (02:30), match_2 (02:00), match_1 (01:00)
+    assert.equal(games[0]?._id, "match_3");
+    assert.equal(games[0]?.won, true);
+    assert.equal(games[0]?.opponent, "opp");
+
+    assert.equal(games[1]?._id, "match_4");
+    assert.equal(games[1]?.draw, true);
+
+    assert.equal(games[2]?._id, "match_2");
+    assert.equal(games[2]?.won, false);
+
+    assert.equal(games[3]?._id, "match_1");
+    assert.equal(games[3]?.won, true);
 });

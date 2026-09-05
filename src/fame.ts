@@ -118,6 +118,72 @@ export interface FameRunOptions {
 }
 
 /**
+ * Parse Fame match list according to Screeps Arena usersCode score specification.
+ *
+ * In Screeps Arena, `game.result.winner` is the score from the perspective of `usersCode[0]`:
+ *   - 1: usersCode[0] won
+ *   - 0: usersCode[1] won
+ *   - 0.5: Draw
+ */
+export function parseFameGames(
+    rawGames: any[],
+    myUserId: string | null,
+): { games: FameGameSummary[]; wins: number; losses: number; draws: number } {
+    let wins = 0;
+    let losses = 0;
+    let draws = 0;
+
+    const parsedGames: FameGameSummary[] = rawGames.map((item: any) => {
+        const g = item.game ?? {};
+        const rawWinner = g.result?.winner;
+        const isDraw = rawWinner === 0.5 || rawWinner === -1 || g.result?.draw === true;
+
+        const code0Id = Array.isArray(g.usersCode) ? g.usersCode[0] : null;
+        const code0 = Array.isArray(item.codes) ? item.codes.find((c: any) => c._id === code0Id) : null;
+        const isMyCode0 = code0 ? code0.user === myUserId : false;
+
+        let won = false;
+        let opponent = "System";
+
+        if (Array.isArray(item.users)) {
+            const oppUser = item.users.find((u: any) => u._id !== myUserId);
+            if (oppUser) opponent = oppUser.username || "Opponent";
+        }
+
+        if (!isDraw && typeof rawWinner === "number") {
+            won = isMyCode0 ? rawWinner === 1 : rawWinner === 0;
+        }
+
+        if (g.status === "finished") {
+            if (isDraw) draws++;
+            else if (won) wins++;
+            else losses++;
+        }
+
+        return {
+            _id: g._id ?? item._id,
+            shortId: g.shortId ?? null,
+            status: g.status ?? "unknown",
+            winner: rawWinner ?? null,
+            won,
+            draw: isDraw,
+            ticks: g.meta?.ticks ?? g.ticks ?? 0,
+            createdAt: g.createdAt ?? item.createdAt ?? null,
+            opponent,
+        };
+    });
+
+    // Sort games latest first (descending by createdAt, so games[0] is always the most recent match)
+    const games = parsedGames.sort((a, b) => {
+        const tA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const tB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return tB - tA;
+    });
+
+    return { games, wins, losses, draws };
+}
+
+/**
  * Calculate the next UTC 00:00:00 timestamp and remaining milliseconds.
  */
 export function getNextUtcReset(): { nextResetUtc: string; nextResetMs: number } {
@@ -260,46 +326,8 @@ async function getSingleArenaFameStatus(
         })()
     `);
 
-    // Parse games
-    let wins = 0;
-    let losses = 0;
-    let draws = 0;
-
-    const games: FameGameSummary[] = rawGames.map((item: any) => {
-        const g = item.game ?? {};
-        const isDraw = g.result?.winner === -1 || g.result?.draw === true;
-        const winnerIndex = isDraw ? -1 : (g.result?.winner ?? null);
-
-        let won = false;
-        let opponent = "System";
-
-        if (Array.isArray(item.users)) {
-            const myIndex = item.users.findIndex((u: any) => u._id === myUserId);
-            const oppUser = item.users.find((u: any) => u._id !== myUserId);
-            if (oppUser) opponent = oppUser.username || "Opponent";
-            if (!isDraw && myIndex !== -1 && winnerIndex === myIndex) {
-                won = true;
-            }
-        }
-
-        if (g.status === "finished") {
-            if (isDraw) draws++;
-            else if (won) wins++;
-            else losses++;
-        }
-
-        return {
-            _id: g._id ?? item._id,
-            shortId: g.shortId ?? null,
-            status: g.status ?? "unknown",
-            winner: winnerIndex,
-            won,
-            draw: isDraw,
-            ticks: g.meta?.ticks ?? g.ticks ?? 0,
-            createdAt: g.createdAt ?? item.createdAt,
-            opponent,
-        };
-    });
+    // Parse games using Screeps Arena usersCode score specification
+    const { games, wins, losses, draws } = parseFameGames(rawGames, myUserId);
 
     const isFinished = Boolean(fameSession?.finishedAt);
     const gamesPlayed = games.length;
