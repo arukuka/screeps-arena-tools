@@ -21,6 +21,13 @@ import { DEFAULT_PORT, listReplays, resolveServeOptions, serve } from "./serve.j
 import { getExistingMatchIds, openArenaSession, syncReplays, watchReplays } from "./sync.js";
 import { getCurrentUser, resolveArena, fetchRatingHistory } from "./arena_api.js";
 import { collect } from "./collect.js";
+import {
+    runFameAutomation,
+    getAllArenasFameStatus,
+    saveDefaultFameConfig,
+    formatDuration,
+    getNextUtcReset,
+} from "./fame.js";
 import type { ReplayDoc } from "./types.js";
 
 const CURRENT_DIR = dirname(fileURLToPath(import.meta.url));
@@ -30,6 +37,14 @@ const ROOT = CURRENT_DIR.endsWith("dist/src") || CURRENT_DIR.endsWith("dist\\src
 
 const USAGE = `
 Screeps: Arena Tools
+
+  screeps-arena-tools fame [arena] [--stop-on-defeat] [--continuous] [--status] [--init-config]
+      Automate daily Fame matches, collect chest rewards, and finalize sessions.
+      - Default: runs all 10 matches per unlocked arena.
+      - Add --stop-on-defeat to stop daily series upon first defeat.
+      - Add --continuous (or --watch) to wait until next UTC 00:00:00 and loop daily.
+      - Add --status to display current Fame status, rewards, and reset countdown.
+      - Add --init-config to generate a fame.config.json template.
 
   screeps-arena-tools collect [arena] [--count <n>] [-o <file>] [--filter <str>] [--stdout] [--continuous]
       Automate match execution and log collection via running Screeps: Arena.
@@ -431,11 +446,88 @@ async function cmdCollect(positional: string[], flags: Record<string, string | b
     });
 }
 
+async function cmdFame(positional: string[], flags: Record<string, string | boolean>): Promise<void> {
+    const isStatus = Boolean(flags.status || positional[0] === "status");
+    const isInitConfig = Boolean(flags["init-config"] || positional[0] === "init-config");
+    const arena = isStatus || isInitConfig ? undefined : (positional[0] ?? (typeof flags.arena === "string" ? flags.arena : undefined));
+    const stopOnDefeat = Boolean(flags["stop-on-defeat"] ?? flags.stopOnDefeat);
+    const continuous = Boolean(flags.continuous ?? flags.watch ?? flags.loop);
+    const config = typeof flags.config === "string" ? flags.config : undefined;
+
+    if (isInitConfig) {
+        console.log("Connecting to Screeps: Arena to inspect season arenas...");
+        const session = await openArenaSession();
+        try {
+            const statuses = await getAllArenasFameStatus(session);
+            const savedPath = saveDefaultFameConfig(statuses, config, { stopOnDefeat });
+            console.log(`Generated Fame configuration file: ${savedPath}`);
+            console.log("Arenas configured:");
+            for (const a of statuses) {
+                console.log(`  - [${a.unlocked ? "ENABLED" : "LOCKED"}] ${a.arenaName} (${a.advanced ? "Adv" : "Basic"})`);
+                if (a.sourceFolder) console.log(`      sourceFolder: ${a.sourceFolder}`);
+            }
+        } finally {
+            session.close();
+        }
+        return;
+    }
+
+    if (isStatus) {
+        const session = await openArenaSession();
+        try {
+            const statuses = await getAllArenasFameStatus(session);
+            const { nextResetUtc, nextResetMs } = getNextUtcReset();
+
+            console.log("\n================ Screeps: Arena - Fame Daily Status ================");
+            console.log(`Next daily reset: ${nextResetUtc} (in ${formatDuration(nextResetMs)})`);
+            console.log("---------------------------------------------------------------------");
+
+            for (const a of statuses) {
+                const badge = !a.unlocked
+                    ? "[LOCKED]"
+                    : a.isFinished
+                      ? "[FINISHED]"
+                      : a.canPlay
+                        ? "[CAN PLAY]"
+                        : "[IN PROGRESS]";
+                console.log(`\n${badge} ${a.arenaName} (${a.advanced ? "Advanced" : "Basic"})`);
+                console.log(`  ID           : ${a.arenaId}`);
+                if (a.unlocked) {
+                    console.log(`  Matches Today: ${a.gamesPlayed}/10 (${a.wins}W / ${a.losses}L / ${a.draws}D)`);
+                    console.log(`  Fame Points  : ${a.famePoints}`);
+                    console.log(`  Chest Level  : ${a.rewardsLevel} (Claimed: ${a.rewardsTaken ? "Yes" : "No"})`);
+                    if (a.rewards.length > 0) {
+                        const rList = a.rewards.map((r) => `${r.name} x${r.quantity}`).join(", ");
+                        console.log(`  Rewards      : ${rList}`);
+                    }
+                    if (a.sourceFolder) {
+                        console.log(`  Code Folder  : ${a.sourceFolder}`);
+                    }
+                }
+            }
+            console.log("\n=====================================================================\n");
+        } finally {
+            session.close();
+        }
+        return;
+    }
+
+    await runFameAutomation({
+        arena,
+        stopOnDefeat,
+        continuous,
+        config,
+    });
+}
+
 async function main(): Promise<void> {
     const [command, ...rest] = process.argv.slice(2);
     const { positional, flags } = parseArgs(rest);
 
     switch (command) {
+        case "fame":
+            await cmdFame(positional, flags);
+            break;
         case "collect":
             await cmdCollect(positional, flags);
             break;

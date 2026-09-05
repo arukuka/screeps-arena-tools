@@ -9,7 +9,11 @@
 <body>
 <div id="app">
     <header class="topbar">
-        <h1>Arena Replay</h1>
+        <h1>Arena Tools</h1>
+        <nav class="topbar-tabs">
+            <button id="tab-btn-replays" class="tab-btn active" type="button">🎬 Replays</button>
+            <button id="tab-btn-fame" class="tab-btn" type="button">⚡ Fame Status</button>
+        </nav>
         <div class="topbar-meta" id="match-title">No replay selected</div>
         <div class="topbar-actions">
             <label class="file-button">
@@ -21,16 +25,17 @@
         </div>
     </header>
 
-    <aside class="sidebar" id="sidebar">
-        <div class="sidebar-head">Replays</div>
-        <div id="replay-list" class="replay-list">
-            <p class="hint">Loading…</p>
-        </div>
-        <div class="sidebar-head">Plugins</div>
-        <div id="plugin-list" class="plugin-list">
-            <p class="hint">None</p>
-        </div>
-    </aside>
+    <div id="view-replays" class="app-layout">
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-head">Replays</div>
+            <div id="replay-list" class="replay-list">
+                <p class="hint">Loading…</p>
+            </div>
+            <div class="sidebar-head">Plugins</div>
+            <div id="plugin-list" class="plugin-list">
+                <p class="hint">None</p>
+            </div>
+        </aside>
 
     <main class="stage">
         <div class="board-wrap" id="board-wrap">
@@ -111,6 +116,43 @@
         <input type="range" id="scrubber" min="0" max="0" value="0" step="1" />
         <canvas id="chart" class="chart"></canvas>
     </footer>
+    </div> <!-- /#view-replays -->
+
+    <!-- Fame Automation & Status Dashboard -->
+    <div id="view-fame" class="fame-dashboard" hidden>
+        <div class="fame-header">
+            <div class="fame-header-title">
+                <h2>⚡ Fame Daily Automation</h2>
+                <p class="hint">Daily series of matches against random opponents across season arenas.</p>
+            </div>
+            <div class="fame-header-actions">
+                <button id="fame-refresh-btn" type="button" class="action-btn">🔄 Refresh Status</button>
+            </div>
+        </div>
+
+        <div class="fame-summary-bar">
+            <div class="fame-summary-item">
+                <div class="summary-label">Next Daily Reset (UTC 00:00)</div>
+                <div class="summary-value timer" id="fame-reset-countdown">--:--:--</div>
+            </div>
+            <div class="fame-summary-item">
+                <div class="summary-label">Unlocked Arenas</div>
+                <div class="summary-value" id="fame-unlocked-count">- / 6</div>
+            </div>
+            <div class="fame-summary-item">
+                <div class="summary-label">Total Points Today</div>
+                <div class="summary-value" id="fame-total-points">0</div>
+            </div>
+            <div class="fame-summary-item">
+                <div class="summary-label">Automation Status</div>
+                <div class="summary-value status-badge" id="fame-overall-status">Connecting…</div>
+            </div>
+        </div>
+
+        <div id="fame-cards-container" class="fame-cards-grid">
+            <div class="fame-loading">Connecting to Screeps: Arena…</div>
+        </div>
+    </div>
 
     <!-- GIF Export Modal Dialog -->
     <div id="gif-modal" class="modal-backdrop" hidden>

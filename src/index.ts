@@ -12,4 +12,19 @@ export { drawBoard, drawStructures, drawCreeps, drawActions, drawTerrain } from 
 export { SoftwareCanvas } from "./software_canvas.js";
 export { GifEncoder, generateReplayGif } from "./gif.js";
 export { collect, type CollectOptions, type MatchResult } from "./collect.js";
+export {
+    runFameAutomation,
+    runFameForArena,
+    getAllArenasFameStatus,
+    getNextUtcReset,
+    formatDuration,
+    loadFameConfig,
+    saveDefaultFameConfig,
+    type ArenaFameStatus,
+    type FameConfig,
+    type FameRunOptions,
+    type FameGameSummary,
+    type FameSessionInfo,
+    type FameRewardDef,
+} from "./fame.js";
 export * from "./types.js";

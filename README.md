@@ -2,6 +2,7 @@
 
 A zero-dependency, buildless toolchain to **fetch, normalize, and view** [Screeps: Arena](https://arena.screeps.com/) match replays. Runs directly on Node.js.
 
+- **fame** — Automate daily Fame match series (up to 10 matches), chest rewards, and daily UTC 00:00 loop
 - **sync & watch** — Automatically sync match history and auto-download new replays as soon as games finish
 - **collect** — Automate match execution vs Idle opponent and extract console logs
 - **fetch** — Fetch match replays and console logs accessible by your account via the running Screeps: Arena client
@@ -11,10 +12,13 @@ A zero-dependency, buildless toolchain to **fetch, normalize, and view** [Screep
 - **plugins** — Overlay bot-specific internal state **without forking the codebase**
 
 ```bash
+npx screeps-arena-tools fame                                  # Auto-run daily Fame matches for unlocked arenas
+npx screeps-arena-tools fame --status                         # View today's Fame progress & reset countdown
+npx screeps-arena-tools fame --continuous                     # Keep running daily, waiting for UTC 00:00:00 reset
 npx screeps-arena-tools collect "Pain and Gain" --count 10  # Auto-run 10 matches & collect logs
 npx screeps-arena-tools sync "Pain and Gain"                # Auto-fetch all recent replays
 npx screeps-arena-tools sync --watch                       # Monitor & auto-download in background
-npx screeps-arena-tools view                               # http://localhost:5544/
+npx screeps-arena-tools view                               # http://localhost:5544/ (Replays & Fame Status)
 ```
 
 ---
@@ -31,6 +35,52 @@ It does not forge credentials; instead, **it delegates fetching to your already-
 ---
 
 ## Usage
+
+### Daily Fame Match Automation
+
+Automate your daily Fame series (up to 10 matches per unlocked arena), automatically claim chest rewards upon finishing, and leave the session until tomorrow:
+
+```bash
+# Check current status, rewards, matches played today, and countdown until UTC 00:00:
+screeps-arena-tools fame --status
+
+# Run today's Fame series (default: all 10 matches):
+screeps-arena-tools fame
+
+# Run only a specific arena:
+screeps-arena-tools fame "Pain and Gain"
+
+# Stop daily series upon first defeat (opt-in):
+screeps-arena-tools fame --stop-on-defeat
+
+# Keep running continuously in background, waiting for UTC 00:00:00 daily reset (Ctrl+C to stop):
+screeps-arena-tools fame --continuous
+
+# Generate a fame.config.json template to configure arenas and source folders:
+screeps-arena-tools fame --init-config
+```
+
+#### Configuration File (`fame.config.json`)
+
+You can customize which arenas are enabled and specify custom bot code directories:
+
+```json
+{
+  "stopOnDefeat": false,
+  "continuous": true,
+  "pollIntervalSec": 5,
+  "arenas": [
+    {
+      "id": "6a86d8c454a3948a1e35f90c",
+      "name": "Pain and Gain (Basic)",
+      "enabled": true,
+      "sourceFolder": "/Users/arukuka/ScreepsArena/season4-pain_and_gain"
+    }
+  ]
+}
+```
+
+If no configuration file exists, `screeps-arena-tools` will automatically detect unlocked arenas and source folders configured in Screeps: Arena.
 
 ### Automated Match Runner & Log Collection
 

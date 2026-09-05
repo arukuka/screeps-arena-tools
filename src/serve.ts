@@ -11,6 +11,8 @@ import { extname, join, normalize, resolve, sep } from "node:path";
 import { generateReplayGif } from "./gif.js";
 import { normalizeMatch } from "./normalize.js";
 import { isReplayDoc, readReplay } from "./replay_io.js";
+import { openArenaSession } from "./sync.js";
+import { getAllArenasFameStatus, getNextUtcReset } from "./fame.js";
 import type { ReplayDoc, ReplayListItem, ServeOptions } from "./types.js";
 
 export const DEFAULT_PORT = 5544;
@@ -217,6 +219,22 @@ export async function handleRequest(opts: ServeOptions, req: IncomingMessage, re
 
     if (path === "/api/gif") {
         await handleGifRequest(opts, req, res, url);
+        return;
+    }
+
+    if (path === "/api/fame/status") {
+        try {
+            const session = await openArenaSession();
+            try {
+                const arenas = await getAllArenasFameStatus(session);
+                const { nextResetUtc, nextResetMs } = getNextUtcReset();
+                sendJson(res, 200, { ok: true, arenas, nextResetUtc, nextResetMs });
+            } finally {
+                session.close();
+            }
+        } catch (err: any) {
+            sendJson(res, 200, { ok: false, error: err.message });
+        }
         return;
     }
 

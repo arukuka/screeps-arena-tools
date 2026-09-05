@@ -1041,8 +1041,258 @@ setupEvents();
 await loadPlugins();
 await loadReplayList();
 
-// Automatically check for newly synced replays every 10 seconds
+// ============================================================
+// Fame Status Dashboard & Tabs
+// ============================================================
+
+let currentTab: "replays" | "fame" = "replays";
+let fameNextResetUtc: string | null = null;
+let fameCountdownInterval: any = null;
+
+function switchTab(tab: "replays" | "fame"): void {
+    currentTab = tab;
+    const btnReplays = $("tab-btn-replays");
+    const btnFame = $("tab-btn-fame");
+    const viewReplays = $("view-replays");
+    const viewFame = $("view-fame");
+
+    if (tab === "replays") {
+        btnReplays.classList.add("active");
+        btnFame.classList.remove("active");
+        viewReplays.hidden = false;
+        viewFame.hidden = true;
+        resizeBoard();
+    } else {
+        btnFame.classList.add("active");
+        btnReplays.classList.remove("active");
+        viewReplays.hidden = true;
+        viewFame.hidden = false;
+        loadFameStatus();
+    }
+}
+
+function initTabs(): void {
+    $("tab-btn-replays").addEventListener("click", () => switchTab("replays"));
+    $("tab-btn-fame").addEventListener("click", () => switchTab("fame"));
+    $("fame-refresh-btn").addEventListener("click", () => loadFameStatus());
+
+    // Countdown tick
+    fameCountdownInterval = setInterval(() => {
+        if (!fameNextResetUtc) return;
+        const remainingMs = Math.max(0, new Date(fameNextResetUtc).getTime() - Date.now());
+        const totalSec = Math.floor(remainingMs / 1000);
+        const h = Math.floor(totalSec / 3600).toString().padStart(2, "0");
+        const m = Math.floor((totalSec % 3600) / 60).toString().padStart(2, "0");
+        const s = (totalSec % 60).toString().padStart(2, "0");
+        const el = $("fame-reset-countdown");
+        if (el) el.textContent = `${h}:${m}:${s}`;
+    }, 1000);
+}
+
+async function loadFameStatus(): Promise<void> {
+    const container = $("fame-cards-container");
+    const overallStatus = $("fame-overall-status");
+    try {
+        const res = await fetch("/api/fame/status");
+        const data = await res.json();
+        if (!data.ok) {
+            overallStatus.textContent = "Offline";
+            overallStatus.style.color = "var(--fg-dim)";
+            container.innerHTML = `<div class="fame-loading">Screeps: Arena is not running or inspector unavailable.<br><span class="hint">${escapeHtml(data.error ?? "")}</span></div>`;
+            return;
+        }
+
+        fameNextResetUtc = data.nextResetUtc;
+        renderFameDashboard(data);
+    } catch (err: any) {
+        overallStatus.textContent = "Error";
+        overallStatus.style.color = "var(--side1)";
+        container.innerHTML = `<div class="fame-loading">Error fetching Fame status: ${escapeHtml(err.message)}</div>`;
+    }
+}
+
+function renderFameDashboard(data: any): void {
+    const arenas: any[] = data.arenas || [];
+    const unlocked = arenas.filter((a) => a.unlocked);
+    const totalPoints = arenas.reduce((sum, a) => sum + (a.famePoints || 0), 0);
+
+    $("fame-unlocked-count").textContent = `${unlocked.length} / ${arenas.length}`;
+    $("fame-total-points").textContent = String(totalPoints);
+
+    const anyCanPlay = unlocked.some((a) => a.canPlay);
+    const anyInProg = unlocked.some((a) => a.gamesPlayed > 0 && !a.isFinished);
+    const overallStatus = $("fame-overall-status");
+
+    if (anyInProg) {
+        overallStatus.textContent = "In Progress";
+        overallStatus.style.color = "var(--ok)";
+    } else if (anyCanPlay) {
+        overallStatus.textContent = "Ready to Play";
+        overallStatus.style.color = "var(--ok)";
+    } else {
+        overallStatus.textContent = "Finished Today";
+        overallStatus.style.color = "var(--accent)";
+    }
+
+    const container = $("fame-cards-container");
+    container.innerHTML = arenas.map((a) => renderFameCard(a)).join("");
+
+    // Wire "View Replay" buttons in cards
+    for (const btn of container.querySelectorAll<HTMLElement>(".btn-view-match")) {
+        btn.addEventListener("click", async () => {
+            const shortId = btn.dataset.shortId;
+            const gameId = btn.dataset.gameId;
+            if (!shortId && !gameId) return;
+
+            // Search for matching replay in sidebar
+            const replayListEl = $("replay-list");
+            const matches = replayListEl.querySelectorAll<HTMLElement>(".match");
+            let targetMatchEl: HTMLElement | null = null;
+            for (const m of matches) {
+                const text = m.innerText || "";
+                if ((shortId && text.includes(shortId)) || (gameId && text.includes(gameId))) {
+                    targetMatchEl = m;
+                    break;
+                }
+            }
+
+            if (targetMatchEl) {
+                switchTab("replays");
+                targetMatchEl.click();
+            } else if (shortId) {
+                // Fetch directly via shortId
+                switchTab("replays");
+                try {
+                    const res = await fetch(`/api/replays`);
+                    const rData = await res.json();
+                    const file = rData.replays?.find((r: any) => r.meta?.shortId === shortId || r.file.includes(shortId));
+                    if (file) {
+                        const fileRes = await fetch(`/replays/${encodeURIComponent(file.file)}`);
+                        acceptDocument(await fileRes.json(), file.file);
+                    } else {
+                        alert(`Replay for ${shortId} is not synced yet. Run: screeps-arena-tools sync`);
+                    }
+                } catch (e: any) {
+                    alert(`Cannot load match: ${e.message}`);
+                }
+            }
+        });
+    }
+}
+
+function renderFameCard(a: any): string {
+    const isAdv = a.advanced;
+    const isLocked = !a.unlocked;
+    const isFinished = a.isFinished;
+    const canPlay = a.canPlay;
+
+    const progressPercent = Math.min(100, Math.round((a.gamesPlayed / 10) * 100));
+
+    // Status badge
+    let statusBadge = "";
+    if (isLocked) {
+        statusBadge = `<span class="badge badge-locked">Locked</span>`;
+    } else if (isFinished) {
+        statusBadge = `<span class="badge badge-finished">Finished Today</span>`;
+    } else if (canPlay) {
+        statusBadge = `<span class="badge badge-canplay">Ready</span>`;
+    } else {
+        statusBadge = `<span class="badge badge-finished">Max Matches (10/10)</span>`;
+    }
+
+    // Rewards chips
+    let rewardsHtml = `<span class="hint">No rewards claimed yet</span>`;
+    if (Array.isArray(a.rewards) && a.rewards.length > 0) {
+        rewardsHtml = `<div class="rewards-list">` +
+            a.rewards.map((r: any) => `
+                <div class="reward-chip" title="${escapeHtml(r.description || r.name)}">
+                    ${r.icon_url ? `<img src="${escapeHtml(r.icon_url)}" alt="${escapeHtml(r.name)}" />` : "🎁"}
+                    <span>${escapeHtml(r.name)} x${r.quantity}</span>
+                </div>
+            `).join("") + `</div>`;
+    }
+
+    // Recent games list
+    let recentGamesHtml = `<div class="hint">No matches played today</div>`;
+    if (Array.isArray(a.games) && a.games.length > 0) {
+        recentGamesHtml = `<div class="fame-recent-games">` +
+            a.games.slice(0, 5).map((g: any) => {
+                const outcomeClass = g.draw ? "draw" : g.won ? "win" : "loss";
+                const outcomeText = g.draw ? "DRAW" : g.won ? "WIN" : "LOSS";
+                const replayBtn = g.shortId
+                    ? `<button class="btn-view-match" data-short-id="${escapeHtml(g.shortId)}" data-game-id="${escapeHtml(g._id)}">▶ Replay</button>`
+                    : "";
+                return `
+                    <div class="game-row">
+                        <span class="game-outcome ${outcomeClass}">${outcomeText}</span>
+                        <span class="game-opponent" title="vs ${escapeHtml(g.opponent)}">vs ${escapeHtml(g.opponent)}</span>
+                        <span class="game-ticks">${g.ticks}t</span>
+                        ${replayBtn}
+                    </div>
+                `;
+            }).join("") + `</div>`;
+    }
+
+    return `
+        <div class="fame-card ${isLocked ? "locked" : ""}">
+            <div class="fame-card-head">
+                <div>
+                    <div class="fame-card-title">${escapeHtml(a.arenaName)}</div>
+                    <div class="fame-card-badges">
+                        <span class="badge ${isAdv ? "badge-adv" : "badge-basic"}">${isAdv ? "Advanced" : "Basic"}</span>
+                        ${statusBadge}
+                    </div>
+                </div>
+                <div class="fame-points-badge" style="text-align: right;">
+                    <div style="font-size: 11px; color: var(--fg-dim);">Fame Points</div>
+                    <div style="font-size: 18px; font-weight: 700; color: var(--accent);">${a.famePoints}</div>
+                </div>
+            </div>
+
+            ${!isLocked ? `
+                <div class="fame-progress-wrap">
+                    <div class="fame-progress-meta">
+                        <span>Progress: <strong>${a.gamesPlayed} / 10</strong></span>
+                        <span>${progressPercent}%</span>
+                    </div>
+                    <div class="progress-bar-bg">
+                        <div class="progress-bar-fill" style="width: ${progressPercent}%"></div>
+                    </div>
+                </div>
+
+                <div class="fame-stats-row">
+                    <div class="stat-pill"><span class="k">Record</span><span class="v">${a.wins}W - ${a.losses}L - ${a.draws}D</span></div>
+                    <div class="stat-pill"><span class="k">Win Rate</span><span class="v">${a.gamesPlayed > 0 ? Math.round((a.wins / a.gamesPlayed) * 100) : 0}%</span></div>
+                    <div class="stat-pill"><span class="k">Chest Lvl</span><span class="v">Lvl ${a.rewardsLevel} (${a.rewardsTaken ? "Claimed" : "Unclaimed"})</span></div>
+                </div>
+
+                <div class="fame-rewards-box">
+                    <div class="rewards-header">
+                        <span>Earned Rewards</span>
+                    </div>
+                    ${rewardsHtml}
+                </div>
+
+                <div class="fame-rewards-box">
+                    <div class="rewards-header">
+                        <span>Today's Matches</span>
+                    </div>
+                    ${recentGamesHtml}
+                </div>
+            ` : `
+                <div class="hint" style="padding: 12px 0;">This arena is locked in Screeps: Arena. Unlock in game to enable Fame daily matches.</div>
+            `}
+        </div>
+    `;
+}
+
+initTabs();
+
+// Automatically check for newly synced replays every 10 seconds, and refresh Fame if tab active
 setInterval(() => {
     loadReplayList();
+    if (currentTab === "fame") {
+        loadFameStatus();
+    }
 }, 10000);
 
