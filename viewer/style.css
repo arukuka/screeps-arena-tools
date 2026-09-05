@@ -708,10 +708,63 @@ button:disabled { opacity: 0.4; cursor: default; }
     color: var(--ok);
 }
 
+.fame-cards-container,
 .fame-cards-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 28px;
+}
+
+.fame-tier-section {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.fame-tier-title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.fame-tier-title h3 {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--fg);
+    margin: 0;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.tier-indicator {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    display: inline-block;
+}
+
+.tier-indicator.basic {
+    background: #4aa8ff;
+    box-shadow: 0 0 8px rgba(74, 168, 255, 0.8);
+}
+
+.tier-indicator.adv {
+    background: #ff7a5c;
+    box-shadow: 0 0 8px rgba(255, 122, 92, 0.8);
+}
+
+.fame-cards-row {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 18px;
+}
+
+@media (max-width: 1100px) {
+    .fame-cards-row {
+        grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    }
 }
 
 .fame-card {
@@ -722,14 +775,43 @@ button:disabled { opacity: 0.4; cursor: default; }
     display: flex;
     flex-direction: column;
     gap: 14px;
-    transition: transform 0.15s, border-color 0.15s;
+    transition: transform 0.15s, border-color 0.15s, box-shadow 0.15s;
 }
 .fame-card:hover {
     border-color: #3b495c;
 }
 .fame-card.locked {
-    opacity: 0.6;
+    opacity: 0.55;
     border-style: dashed;
+    filter: grayscale(0.2);
+}
+
+/* Arena Theme Colors matching Screeps: Arena UI */
+.fame-card.theme-pain-and-gain {
+    background: linear-gradient(180deg, rgba(20, 36, 68, 0.75) 0%, rgba(13, 22, 40, 0.9) 100%);
+    border-color: rgba(74, 168, 255, 0.3);
+}
+.fame-card.theme-pain-and-gain:hover {
+    border-color: rgba(74, 168, 255, 0.65);
+    box-shadow: 0 4px 20px rgba(74, 168, 255, 0.15);
+}
+
+.fame-card.theme-spawn-and-swamp {
+    background: linear-gradient(180deg, rgba(18, 48, 28, 0.75) 0%, rgba(12, 30, 18, 0.9) 100%);
+    border-color: rgba(82, 196, 136, 0.3);
+}
+.fame-card.theme-spawn-and-swamp:hover {
+    border-color: rgba(82, 196, 136, 0.65);
+    box-shadow: 0 4px 20px rgba(82, 196, 136, 0.15);
+}
+
+.fame-card.theme-escort-run {
+    background: linear-gradient(180deg, rgba(50, 30, 20, 0.75) 0%, rgba(32, 18, 12, 0.9) 100%);
+    border-color: rgba(229, 152, 102, 0.3);
+}
+.fame-card.theme-escort-run:hover {
+    border-color: rgba(229, 152, 102, 0.65);
+    box-shadow: 0 4px 20px rgba(229, 152, 102, 0.15);
 }
 
 .fame-card-head {
@@ -844,7 +926,25 @@ button:disabled { opacity: 0.4; cursor: default; }
     flex-direction: column;
     gap: 4px;
     font-size: 11px;
+    max-height: 220px;
+    overflow-y: auto;
+    padding-right: 2px;
 }
+.fame-recent-games::-webkit-scrollbar {
+    width: 5px;
+}
+.fame-recent-games::-webkit-scrollbar-track {
+    background: rgba(0, 0, 0, 0.15);
+    border-radius: 3px;
+}
+.fame-recent-games::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.18);
+    border-radius: 3px;
+}
+.fame-recent-games::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.35);
+}
+
 .game-row {
     display: flex;
     align-items: center;
@@ -853,6 +953,13 @@ button:disabled { opacity: 0.4; cursor: default; }
     padding: 5px 8px;
     border-radius: 4px;
     border: 1px solid rgba(255, 255, 255, 0.04);
+}
+.game-match-num {
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--fg-dim);
+    min-width: 26px;
+    font-family: monospace;
 }
 .game-outcome {
     font-weight: 600;

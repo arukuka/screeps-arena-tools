@@ -1200,7 +1200,42 @@ function renderFameDashboard(data: any): void {
     }
 
     const container = $("fame-cards-container");
-    container.innerHTML = arenas.map((a) => renderFameCard(a)).join("");
+
+    const ARENA_ORDER = ["pain and gain", "spawn and swamp", "escort run"];
+    const getOrder = (name: string) => {
+        const idx = ARENA_ORDER.findIndex((o) => name.toLowerCase().includes(o));
+        return idx !== -1 ? idx : 99;
+    };
+
+    const basicArenas = arenas
+        .filter((a) => !a.advanced)
+        .sort((a, b) => getOrder(a.arenaName) - getOrder(b.arenaName));
+
+    const advArenas = arenas
+        .filter((a) => a.advanced)
+        .sort((a, b) => getOrder(a.arenaName) - getOrder(b.arenaName));
+
+    container.innerHTML = `
+        <div class="fame-tier-section">
+            <div class="fame-tier-title">
+                <span class="tier-indicator basic"></span>
+                <h3>Basic Arenas</h3>
+            </div>
+            <div class="fame-cards-row">
+                ${basicArenas.map((a) => renderFameCard(a)).join("")}
+            </div>
+        </div>
+
+        <div class="fame-tier-section">
+            <div class="fame-tier-title">
+                <span class="tier-indicator adv"></span>
+                <h3>Advanced Arenas</h3>
+            </div>
+            <div class="fame-cards-row">
+                ${advArenas.map((a) => renderFameCard(a)).join("")}
+            </div>
+        </div>
+    `;
 
     // Wire "View Replay" buttons in cards
     for (const btn of container.querySelectorAll<HTMLElement>(".btn-view-match")) {
@@ -1215,11 +1250,20 @@ function renderFameDashboard(data: any): void {
     }
 }
 
+function getArenaThemeClass(name: string): string {
+    const n = name.toLowerCase();
+    if (n.includes("pain and gain")) return "theme-pain-and-gain";
+    if (n.includes("spawn and swamp")) return "theme-spawn-and-swamp";
+    if (n.includes("escort run")) return "theme-escort-run";
+    return "";
+}
+
 function renderFameCard(a: any): string {
     const isAdv = a.advanced;
     const isLocked = !a.unlocked;
     const isFinished = a.isFinished;
     const canPlay = a.canPlay;
+    const themeClass = getArenaThemeClass(a.arenaName);
 
     const progressPercent = Math.min(100, Math.round((a.gamesPlayed / 10) * 100));
 
@@ -1247,18 +1291,20 @@ function renderFameCard(a: any): string {
             `).join("") + `</div>`;
     }
 
-    // Recent games list
+    // Recent games list: display all matches today (no 5-item cutoff)
     let recentGamesHtml = `<div class="hint">No matches played today</div>`;
     if (Array.isArray(a.games) && a.games.length > 0) {
         recentGamesHtml = `<div class="fame-recent-games">` +
-            a.games.slice(0, 5).map((g: any) => {
+            a.games.map((g: any, idx: number) => {
                 const outcomeClass = g.draw ? "draw" : g.won ? "win" : "loss";
                 const outcomeText = g.draw ? "DRAW" : g.won ? "WIN" : "LOSS";
+                const matchNum = a.games.length - idx;
                 const replayBtn = g.shortId
                     ? `<button class="btn-view-match" data-short-id="${escapeHtml(g.shortId)}" data-game-id="${escapeHtml(g._id)}">▶ Replay</button>`
                     : "";
                 return `
                     <div class="game-row">
+                        <span class="game-match-num">#${matchNum}</span>
                         <span class="game-outcome ${outcomeClass}">${outcomeText}</span>
                         <span class="game-opponent" title="vs ${escapeHtml(g.opponent)}">vs ${escapeHtml(g.opponent)}</span>
                         <span class="game-ticks">${g.ticks}t</span>
@@ -1269,7 +1315,7 @@ function renderFameCard(a: any): string {
     }
 
     return `
-        <div class="fame-card ${isLocked ? "locked" : ""}">
+        <div class="fame-card ${themeClass} ${isLocked ? "locked" : ""}">
             <div class="fame-card-head">
                 <div>
                     <div class="fame-card-title">${escapeHtml(a.arenaName)}</div>
@@ -1310,7 +1356,7 @@ function renderFameCard(a: any): string {
 
                 <div class="fame-rewards-box">
                     <div class="rewards-header">
-                        <span>Today's Matches</span>
+                        <span>Today's Matches (${Array.isArray(a.games) ? a.games.length : 0})</span>
                     </div>
                     ${recentGamesHtml}
                 </div>
