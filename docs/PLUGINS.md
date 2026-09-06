@@ -62,6 +62,8 @@ Characters like `@` inside sentences (e.g. `foo@example.com`) are ignored; only 
 
 Emitting metadata every tick is unnecessary. Emitting updates only on decision changes and letting plugins look backward is significantly more efficient (see `lookback` in [`examples/plugins/macro-zones.js`](../examples/plugins/macro-zones.js)).
 
+However, note that while change-only sparse emission is ideal for visualization, verification workflows (such as Gate B and Gate C replay verification) require complete, per-tick emissions of all intents issued by the bot.
+
 ---
 
 ## 2. Plugin Side — Rendering

@@ -53,6 +53,8 @@ export interface ReplayMeta {
     height: number;
     /** Console log retrieval statistics. `null` when not recorded. */
     logChunks: LogChunkStats | null;
+    /** Origin producer identifier, e.g. "screeps-arena-sim". Optional. */
+    producer?: string | null;
 }
 
 export interface ReplayObject {
