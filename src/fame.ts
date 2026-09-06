@@ -415,17 +415,24 @@ export async function startFameMatch(
                 return { __error: true, message: "No sourceFolder configured for arena " + arenaId };
             }
 
-            // Obtain SCACodeSourcesService from Angular component
-            const sidebar = document.querySelector("sca-arena-fame-sidebar");
-            const comp = sidebar && window.ng ? window.ng.getComponent(sidebar) : null;
-            const playSvc = comp ? comp._scaPlaySeriesService : null;
-            const codeSourcesSvc = playSvc ? playSvc._scaCodeSourcesService : null;
+            // Obtain SCACodeSourcesService from Angular component (retry up to 5s if component is still mounting)
+            let codeSourcesSvc = null;
+            for (let attempt = 0; attempt < 50; attempt++) {
+                const sidebar = document.querySelector("sca-arena-fame-sidebar");
+                const comp = sidebar && window.ng ? window.ng.getComponent(sidebar) : null;
+                const playSvc = comp ? comp._scaPlaySeriesService : null;
+                if (playSvc && playSvc._scaCodeSourcesService) {
+                    codeSourcesSvc = playSvc._scaCodeSourcesService;
+                    break;
+                }
+                await new Promise((r) => setTimeout(r, 100));
+            }
 
             let zipBlob = null;
             if (codeSourcesSvc) {
                 zipBlob = await codeSourcesSvc.getSourcesFileZip(folder);
             } else {
-                return { __error: true, message: "Could not access Angular SCACodeSourcesService in renderer" };
+                return { __error: true, message: "Could not access Angular SCACodeSourcesService in renderer (timed out waiting for sca-arena-fame-sidebar component)" };
             }
 
             if (!zipBlob) {
@@ -471,21 +478,24 @@ export async function pollGameFinished(
     options: { timeoutMs?: number; intervalMs?: number; onProgress?: (ticks: number) => void } = {},
 ): Promise<any> {
     const timeoutMs = options.timeoutMs ?? 300_000; // 5 minutes max per match
-    const intervalMs = options.intervalMs ?? 4_000;
+    const intervalMs = options.intervalMs ?? 3_000;
     const startTime = Date.now();
 
     while (Date.now() - startTime < timeoutMs) {
         const data = await session.evaluateInRenderer(fetchExpr(`${API}/game/${gameId}`));
         if (data && !data.__error && data.game) {
-            const g = data.game;
-            const ticks = g.meta?.ticks ?? g.ticks ?? 0;
+            const outer = data.game;
+            const inner = outer.game ?? outer;
+            const status = inner.status ?? outer.status;
+            const ticks = outer.meta?.ticks ?? inner.meta?.ticks ?? inner.ticks ?? outer.ticks ?? 0;
+
             if (options.onProgress) options.onProgress(ticks);
 
-            if (g.status === "finished") {
-                return g;
+            if (status === "finished") {
+                return inner;
             }
-            if (g.status === "error" || g.status === "failed") {
-                throw new Error(`Game failed with status: ${g.status}`);
+            if (status === "error" || status === "failed") {
+                throw new Error(`Game failed with status: ${status}`);
             }
         }
         await sleep(intervalMs);
@@ -560,6 +570,8 @@ export async function runFameForArena(
         return { completed: true, matchesPlayed: 0, stoppedOnDefeat: false, finalStatus: currentStatus };
     }
 
+    let errorOccurred = false;
+
     // Play loop
     while (currentStatus.gamesPlayed < FAME_MAX_GAMES) {
         const matchNum = currentStatus.gamesPlayed + 1;
@@ -608,11 +620,26 @@ export async function runFameForArena(
             await sleep(2000);
         } catch (err: any) {
             log(`  Error running match: ${err.message}`);
+            errorOccurred = true;
             break;
         }
     }
 
-    // Series finished: claim rewards and finish session
+    // Refresh final status
+    const meData = await session.evaluateInRenderer(fetchExpr(`${API}/auth/me`));
+    currentStatus = await getSingleArenaFameStatus(session, arena, meData?._id ?? null);
+
+    if (errorOccurred) {
+        log(`\n  Notice: Fame runner interrupted by error. Session is kept OPEN (not finalized) so you can safely retry.`);
+        return {
+            completed: false,
+            matchesPlayed,
+            stoppedOnDefeat: false,
+            finalStatus: currentStatus,
+        };
+    }
+
+    // Series finished cleanly: claim rewards and finish session
     log(`\n  Series finished. Total matches played today: ${currentStatus.gamesPlayed}/${FAME_MAX_GAMES}`);
 
     // If rewards exist and not claimed yet, claim them
@@ -626,8 +653,9 @@ export async function runFameForArena(
         }
     }
 
-    // Finalize session (Leave and Finish)
-    if (!currentStatus.isFinished) {
+    // Finalize session (Leave and Finish) only when all matches played or stopped on defeat
+    const shouldFinalize = currentStatus.gamesPlayed >= FAME_MAX_GAMES || stoppedOnDefeat;
+    if (shouldFinalize && !currentStatus.isFinished) {
         log(`  Finalizing Fame session (Leave and Finish)...`);
         try {
             await finishFameSession(session, arena.arenaId);
@@ -637,9 +665,9 @@ export async function runFameForArena(
         }
     }
 
-    // Refresh final status
-    const meData = await session.evaluateInRenderer(fetchExpr(`${API}/auth/me`));
-    currentStatus = await getSingleArenaFameStatus(session, arena, meData?._id ?? null);
+    // Refresh final status again after take/finish
+    const finalMeData = await session.evaluateInRenderer(fetchExpr(`${API}/auth/me`));
+    currentStatus = await getSingleArenaFameStatus(session, arena, finalMeData?._id ?? null);
 
     return {
         completed: true,
