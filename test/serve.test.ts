@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { dirname, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 
 import { getNetworkAddresses, listReplays, resolveServeOptions, safeJoin } from "../src/serve.js";
 
@@ -142,3 +144,31 @@ test("binds to explicit host when host option is specified", async () => {
     }
 });
 
+
+test("finds replays nested in per-run subdirectories", () => {
+    const dir = mkdtempSync(join(tmpdir(), "arena-tools-nested-"));
+    try {
+        const run = join(dir, "20260906-run-a");
+        mkdirSync(run);
+        // A replay document one level down, plus a sidecar manifest beside it.
+        writeFileSync(
+            join(run, "match_1.json"),
+            JSON.stringify({
+                format: "screeps-arena-replay",
+                version: 1,
+                meta: { shortId: "abc", players: [], result: null, ticks: 3, ticksLimit: 2000, createdAt: null },
+                terrain: "",
+                objects: [],
+                ticks: [],
+            }),
+        );
+        writeFileSync(join(run, "manifest.json"), JSON.stringify({ runs: 1 }));
+
+        const found = listReplays(dir);
+        assert.equal(found.length, 1, "the manifest must not be listed as a replay");
+        assert.equal(found[0].file, "20260906-run-a/match_1.json");
+        assert.equal(found[0].meta?.shortId, "abc");
+    } finally {
+        rmSync(dir, { recursive: true, force: true });
+    }
+});
