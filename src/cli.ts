@@ -4,7 +4,7 @@
  *
  *   screeps-arena-tools fetch   <url|shortId> [-o <file>]
  *   screeps-arena-tools convert <raw.json>    [-o <file>]
- *   screeps-arena-tools view    [--port N] [--replays <dir>] [--plugins <dir>]
+ *   screeps-arena-tools view    [--port N] [--host <host>] [--replays <dir>] [--plugins <dir>]
  *   screeps-arena-tools info    <replay.json.gz>
  */
 
@@ -17,7 +17,7 @@ import { fetchMatch } from "./fetch_match.js";
 import { generateReplayGif } from "./gif.js";
 import { normalizeMatch } from "./normalize.js";
 import { describeReplay, isReplayDoc, readReplay, writeReplay } from "./replay_io.js";
-import { DEFAULT_PORT, listReplays, resolveServeOptions, serve } from "./serve.js";
+import { DEFAULT_PORT, getNetworkAddresses, listReplays, resolveServeOptions, serve } from "./serve.js";
 import { getExistingMatchIds, openArenaSession, syncReplays, watchReplays } from "./sync.js";
 import { getCurrentUser, resolveArena, fetchRatingHistory } from "./arena_api.js";
 import { collect } from "./collect.js";
@@ -69,8 +69,9 @@ Screeps: Arena Tools
   screeps-arena-tools gif <replay|shortId> [-o <file>] [--start N] [--end N] [--step N] [--fps N] [--cell N]
       Export animated GIF of a match replay.
 
-  screeps-arena-tools view [--port <n>] [--replays <dir>] [--plugins <dir>]
+  screeps-arena-tools view [--port <n>] [--host <host>] [--replays <dir>] [--plugins <dir>]
       Start the replay viewer (default http://localhost:${DEFAULT_PORT}/).
+      Use --host 0.0.0.0 to allow access from local network / mobile devices.
 
   screeps-arena-tools info <replay.json.gz>
       Display summary of a normalized replay file.
@@ -230,13 +231,29 @@ async function cmdGif(positional: string[], flags: Record<string, string | boole
 function cmdView(flags: Record<string, string | boolean>): void {
     const opts = resolveServeOptions(ROOT, {
         port: flags.port !== undefined ? Number(flags.port) : undefined,
+        host: typeof flags.host === "string" ? flags.host : undefined,
         replayDir: typeof flags.replays === "string" ? flags.replays : undefined,
         pluginDir: typeof flags.plugins === "string" ? flags.plugins : undefined,
     });
     serve(opts);
     const found = listReplays(opts.replayDir);
     console.log("==================================================");
-    console.log(`Viewer: http://localhost:${opts.port}/`);
+    if (opts.host === "0.0.0.0") {
+        console.log("Viewer:");
+        console.log(`  Local:   http://localhost:${opts.port}/`);
+        const addrs = getNetworkAddresses();
+        if (addrs.length > 0) {
+            for (const addr of addrs) {
+                console.log(`  Network: http://${addr}:${opts.port}/`);
+            }
+        } else {
+            console.log(`  Network: http://0.0.0.0:${opts.port}/`);
+        }
+    } else if (opts.host) {
+        console.log(`Viewer: http://${opts.host}:${opts.port}/`);
+    } else {
+        console.log(`Viewer: http://localhost:${opts.port}/`);
+    }
     console.log(`  Replays: ${opts.replayDir} (${found.length} items)`);
     console.log(`  Plugins: ${opts.pluginDir ?? "(none)"}`);
     if (found.length === 0) console.log("  No replays found. Fetch one using: screeps-arena-tools fetch <url>");

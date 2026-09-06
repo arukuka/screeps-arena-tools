@@ -260,6 +260,7 @@ export interface FetchMatchOptions {
 
 export interface ServeOptions {
     port: number;
+    host?: string;
     viewerDir: string;
     distViewerDir?: string;
     srcDir: string;

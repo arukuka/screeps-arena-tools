@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 
-import { listReplays, resolveServeOptions, safeJoin } from "../src/serve.js";
+import { getNetworkAddresses, listReplays, resolveServeOptions, safeJoin } from "../src/serve.js";
 
 const CURRENT_DIR = dirname(fileURLToPath(import.meta.url));
 const ROOT = CURRENT_DIR.endsWith("dist/test") || CURRENT_DIR.endsWith("dist\\test")
@@ -59,7 +59,22 @@ test("resolves default serve options", () => {
     const opts = resolveServeOptions(ROOT, {});
     assert.equal(opts.viewerDir, resolve(ROOT, "viewer"));
     assert.equal(opts.srcDir, resolve(ROOT, "src"));
+    assert.equal(opts.host, undefined);
     assert.ok(opts.port > 0);
+});
+
+test("resolves custom host option", () => {
+    const opts = resolveServeOptions(ROOT, { host: "0.0.0.0" });
+    assert.equal(opts.host, "0.0.0.0");
+});
+
+test("getNetworkAddresses returns valid IPv4 addresses", () => {
+    const addrs = getNetworkAddresses();
+    assert.ok(Array.isArray(addrs));
+    for (const addr of addrs) {
+        assert.match(addr, /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/);
+        assert.notEqual(addr, "127.0.0.1");
+    }
 });
 
 test("allows explicitly disabling plugin directory", () => {
@@ -104,3 +119,26 @@ test("redirects / to /replays and serves index.html for SPA routes", async () =>
         srv.close();
     }
 });
+
+test("binds to explicit host when host option is specified", async () => {
+    const { serve } = await import("../src/serve.js");
+    const http = await import("node:http");
+
+    const opts = resolveServeOptions(ROOT, { port: 5790, host: "127.0.0.1" });
+    const srv = serve(opts);
+
+    const get = (path: string) =>
+        new Promise<{ status: number }>((res) => {
+            http.get(`http://127.0.0.1:5790${path}`, (r) => {
+                res({ status: r.statusCode ?? 0 });
+            });
+        });
+
+    try {
+        const root = await get("/");
+        assert.equal(root.status, 302);
+    } finally {
+        srv.close();
+    }
+});
+

@@ -189,6 +189,7 @@ Saved: replays/XTTCQ7DA4T.replay.json.gz (28.9 KB)
 
 ```bash
 screeps-arena-tools view                 # http://localhost:5544/
+screeps-arena-tools view --host 0.0.0.0  # Allow access from local network / mobile devices
 screeps-arena-tools view --port 8080 --replays ./replays
 ```
 

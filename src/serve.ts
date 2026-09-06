@@ -7,6 +7,7 @@
 
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { networkInterfaces } from "node:os";
 import { extname, join, normalize, resolve, sep } from "node:path";
 import { generateReplayGif } from "./gif.js";
 import { normalizeMatch } from "./normalize.js";
@@ -73,17 +74,46 @@ const sendText = (res: ServerResponse, status: number, text: string): void => {
     res.end(text);
 };
 
+/** Maximum directory depth walked when scanning for replays. */
+const REPLAY_SCAN_DEPTH = 3;
+
+/**
+ * Collect replay file paths relative to `dir`, descending into subdirectories.
+ *
+ * Producers other than `fetch` may group runs into folders (a simulator writing
+ * one directory per self-play run, for example), so a flat scan would find
+ * nothing. Paths are returned POSIX-style because they travel to the browser
+ * and back through `safeJoin`.
+ */
+function collectReplayFiles(dir: string, depth = 0, prefix = ""): string[] {
+    if (depth > REPLAY_SCAN_DEPTH) return [];
+    const found: string[] = [];
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const rel = prefix === "" ? entry.name : `${prefix}/${entry.name}`;
+        if (entry.isDirectory()) {
+            found.push(...collectReplayFiles(join(dir, entry.name), depth + 1, rel));
+        } else if (entry.name.endsWith(".json") || entry.name.endsWith(".json.gz")) {
+            found.push(rel);
+        }
+    }
+    return found;
+}
+
 /** Scan replay directory and construct file metadata list. */
 export function listReplays(dir: string): ReplayListItem[] {
     if (!existsSync(dir)) return [];
-    return readdirSync(dir)
-        .filter((f) => f.endsWith(".json") || f.endsWith(".json.gz"))
+    return collectReplayFiles(dir)
         .map((file) => {
             const fullPath = join(dir, file);
             const st = statSync(fullPath);
             let meta = null;
+            // Parsed cleanly but carries no replay metadata: a sidecar file,
+            // not a broken replay. Those are dropped below. A file that fails
+            // to parse stays listed with `meta: null` so the failure is visible.
+            let sidecar = false;
             try {
                 const doc = readReplay(fullPath);
+                if (!doc?.meta) sidecar = true;
                 if (doc?.meta) {
                     meta = {
                         shortId: doc.meta.shortId ?? null,
@@ -97,8 +127,12 @@ export function listReplays(dir: string): ReplayListItem[] {
             } catch {
                 // Fallback to meta: null if unreadable or invalid format
             }
-            return { file, bytes: st.size, modified: st.mtime.toISOString(), meta };
+            return { file, bytes: st.size, modified: st.mtime.toISOString(), meta, sidecar };
         })
+        // Directories may hold sidecar JSON (a run manifest, for instance).
+        // Those are not replays and would only be noise in the list.
+        .filter((item) => !item.sidecar)
+        .map(({ sidecar: _sidecar, ...item }) => item)
         .sort((a, b) => b.modified.localeCompare(a.modified));
 }
 
@@ -315,14 +349,33 @@ export function serve(opts: ServeOptions): Server {
             sendText(res, 500, err instanceof Error ? err.message : String(err));
         }
     });
-    server.listen(opts.port);
+    if (opts.host) {
+        server.listen(opts.port, opts.host);
+    } else {
+        server.listen(opts.port);
+    }
     return server;
+}
+
+/** Enumerate non-internal IPv4 addresses for local network access display. */
+export function getNetworkAddresses(): string[] {
+    const nets = networkInterfaces();
+    const results: string[] = [];
+    for (const name of Object.keys(nets)) {
+        for (const net of nets[name] ?? []) {
+            if (net.family === "IPv4" && !net.internal && !net.address.startsWith("169.254.")) {
+                results.push(net.address);
+            }
+        }
+    }
+    return results;
 }
 
 /** Resolve partial serve options to absolute paths and defaults. */
 export function resolveServeOptions(rootDir: string, options: Partial<ServeOptions> = {}): ServeOptions {
     return {
         port: options.port ?? DEFAULT_PORT,
+        host: options.host,
         viewerDir: resolve(rootDir, "viewer"),
         distViewerDir: resolve(rootDir, "dist/viewer"),
         srcDir: resolve(rootDir, "src"),
