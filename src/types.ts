@@ -266,6 +266,7 @@ export interface ServeOptions {
     srcDir: string;
     replayDir: string;
     pluginDir: string | null;
+    disableFamePolling?: boolean;
 }
 
 export interface ReplayListItem {

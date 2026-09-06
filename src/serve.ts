@@ -14,9 +14,101 @@ import { normalizeMatch } from "./normalize.js";
 import { isReplayDoc, readReplay } from "./replay_io.js";
 import { openArenaSession } from "./sync.js";
 import { getAllArenasFameStatus, getNextUtcReset } from "./fame.js";
+import { renderFamePageHtml } from "./fame_render.js";
 import type { ReplayDoc, ReplayListItem, ServeOptions } from "./types.js";
 
 export const DEFAULT_PORT = 5544;
+
+export interface CachedFameData {
+    ok: boolean;
+    arenas?: any[];
+    nextResetUtc?: string;
+    nextResetMs?: number;
+    error?: string;
+    updatedAt: number;
+}
+
+let cachedFameData: CachedFameData | null = null;
+let fameFetchPromise: Promise<CachedFameData> | null = null;
+let famePollingTimer: NodeJS.Timeout | null = null;
+
+export function getCachedFameData(): CachedFameData | null {
+    return cachedFameData;
+}
+
+export function setCachedFameDataForTest(data: CachedFameData | null): void {
+    cachedFameData = data;
+}
+
+/**
+ * Fetch and update cached Fame status.
+ * Reuses existing in-flight promise to prevent concurrent duplicate CDP connections.
+ */
+export async function updateFameStatusCache(force = false): Promise<CachedFameData> {
+    const CACHE_TTL_MS = 25000;
+    if (!force && cachedFameData && Date.now() - cachedFameData.updatedAt < CACHE_TTL_MS) {
+        return cachedFameData;
+    }
+
+    if (fameFetchPromise) {
+        return fameFetchPromise;
+    }
+
+    fameFetchPromise = (async () => {
+        try {
+            const session = await openArenaSession();
+            try {
+                const arenas = await getAllArenasFameStatus(session);
+                const { nextResetUtc, nextResetMs } = getNextUtcReset();
+                const result: CachedFameData = {
+                    ok: true,
+                    arenas,
+                    nextResetUtc,
+                    nextResetMs,
+                    updatedAt: Date.now(),
+                };
+                cachedFameData = result;
+                return result;
+            } finally {
+                session.close();
+            }
+        } catch (err: any) {
+            const result: CachedFameData = {
+                ok: false,
+                error: err.message,
+                updatedAt: Date.now(),
+            };
+            cachedFameData = result;
+            return result;
+        } finally {
+            fameFetchPromise = null;
+        }
+    })();
+
+    return fameFetchPromise;
+}
+
+/**
+ * Starts periodic background polling of Fame status to keep in-memory cache hot.
+ */
+export function startFameBackgroundPolling(intervalMs = 30000): void {
+    if (famePollingTimer) return;
+    updateFameStatusCache(true).catch(() => {});
+    famePollingTimer = setInterval(() => {
+        updateFameStatusCache(true).catch(() => {});
+    }, intervalMs);
+    famePollingTimer.unref();
+}
+
+/**
+ * Stops background polling of Fame status.
+ */
+export function stopFameBackgroundPolling(): void {
+    if (famePollingTimer) {
+        clearInterval(famePollingTimer);
+        famePollingTimer = null;
+    }
+}
 
 const CONTENT_TYPES: Record<string, string> = {
     ".html": "text/html; charset=utf-8",
@@ -257,18 +349,11 @@ export async function handleRequest(opts: ServeOptions, req: IncomingMessage, re
     }
 
     if (path === "/api/fame/status") {
-        try {
-            const session = await openArenaSession();
-            try {
-                const arenas = await getAllArenasFameStatus(session);
-                const { nextResetUtc, nextResetMs } = getNextUtcReset();
-                sendJson(res, 200, { ok: true, arenas, nextResetUtc, nextResetMs });
-            } finally {
-                session.close();
-            }
-        } catch (err: any) {
-            sendJson(res, 200, { ok: false, error: err.message });
+        const force = url.searchParams.get("refresh") === "1";
+        if (force || !cachedFameData) {
+            await updateFameStatusCache(force);
         }
+        sendJson(res, 200, cachedFameData ?? { ok: false, error: "No status available" });
         return;
     }
 
@@ -292,6 +377,21 @@ export async function handleRequest(opts: ServeOptions, req: IncomingMessage, re
     if (isSpaPage) {
         const indexHtml = safeJoin(opts.viewerDir, "index.html");
         if (indexHtml !== null && existsSync(indexHtml)) {
+            if (path === "/fame") {
+                if (!opts.disableFamePolling && !cachedFameData) {
+                    await updateFameStatusCache(false);
+                }
+                const rawHtml = readFileSync(indexHtml, "utf-8");
+                const ssrHtml = renderFamePageHtml(rawHtml, cachedFameData);
+                const body = Buffer.from(ssrHtml, "utf-8");
+                res.writeHead(200, {
+                    "content-type": CONTENT_TYPES[".html"] ?? "text/html; charset=utf-8",
+                    "content-length": String(body.byteLength),
+                    "cache-control": "no-cache",
+                });
+                res.end(body);
+                return;
+            }
             sendFile(res, indexHtml);
             return;
         }
@@ -342,11 +442,19 @@ function listPlugins(dir: string | null): string[] {
 }
 
 export function serve(opts: ServeOptions): Server {
+    if (!opts.disableFamePolling) {
+        startFameBackgroundPolling();
+    }
     const server = createServer(async (req, res) => {
         try {
             await handleRequest(opts, req, res);
         } catch (err) {
             sendText(res, 500, err instanceof Error ? err.message : String(err));
+        }
+    });
+    server.on("close", () => {
+        if (!opts.disableFamePolling) {
+            stopFameBackgroundPolling();
         }
     });
     if (opts.host) {
@@ -381,5 +489,6 @@ export function resolveServeOptions(rootDir: string, options: Partial<ServeOptio
         srcDir: resolve(rootDir, "src"),
         replayDir: resolve(process.cwd(), options.replayDir ?? "replays"),
         pluginDir: options.pluginDir === null ? null : resolve(process.cwd(), options.pluginDir ?? "plugins"),
+        disableFamePolling: options.disableFamePolling,
     };
 }

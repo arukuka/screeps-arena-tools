@@ -1135,7 +1135,7 @@ async function handleRoute(path = window.location.pathname): Promise<void> {
 function initTabs(): void {
     $("tab-btn-replays").addEventListener("click", () => navigate("/replays"));
     $("tab-btn-fame").addEventListener("click", () => navigate("/fame"));
-    $("fame-refresh-btn").addEventListener("click", () => loadFameStatus());
+    $("fame-refresh-btn").addEventListener("click", () => loadFameStatus(true));
 
     window.addEventListener("popstate", () => {
         handleRoute(window.location.pathname);
@@ -1154,11 +1154,64 @@ function initTabs(): void {
     }, 1000);
 }
 
-async function loadFameStatus(): Promise<void> {
-    const container = $("fame-cards-container");
-    const overallStatus = $("fame-overall-status");
+function wireFameCardButtons(container: HTMLElement): void {
+    for (const btn of container.querySelectorAll<HTMLElement>(".btn-view-match")) {
+        if (btn.dataset.bound === "1") continue;
+        btn.dataset.bound = "1";
+        btn.addEventListener("click", async () => {
+            const shortId = btn.dataset.shortId;
+            const gameId = btn.dataset.gameId;
+            const targetRef = shortId || gameId;
+            if (targetRef) {
+                navigate(`/replays/${encodeURIComponent(targetRef)}`);
+            }
+        });
+    }
+}
+
+async function fetchFameStatusSilently(): Promise<void> {
     try {
         const res = await fetch("/api/fame/status");
+        const data = await res.json();
+        if (data.ok) {
+            fameNextResetUtc = data.nextResetUtc;
+            renderFameDashboard(data);
+        }
+    } catch {
+        // Ignore background silent fetch failures
+    }
+}
+
+async function loadFameStatus(force = false): Promise<void> {
+    const container = $("fame-cards-container");
+    const overallStatus = $("fame-overall-status");
+    const refreshBtn = $("fame-refresh-btn") as HTMLButtonElement | null;
+
+    // Check if initial SSR data exists on window
+    const initialData = (window as any).__INITIAL_FAME_DATA__;
+    if (!force && initialData) {
+        (window as any).__INITIAL_FAME_DATA__ = null;
+        if (initialData.ok) {
+            fameNextResetUtc = initialData.nextResetUtc;
+            wireFameCardButtons(container);
+            fetchFameStatusSilently();
+            return;
+        } else if (initialData.error) {
+            overallStatus.textContent = "Offline";
+            overallStatus.style.color = "var(--fg-dim)";
+            container.innerHTML = `<div class="fame-loading">Screeps: Arena is not running or inspector unavailable.<br><span class="hint">${escapeHtml(initialData.error ?? "")}</span></div>`;
+            return;
+        }
+    }
+
+    if (force && refreshBtn) {
+        refreshBtn.disabled = true;
+        refreshBtn.textContent = "🔄 Refreshing…";
+    }
+
+    try {
+        const url = force ? "/api/fame/status?refresh=1" : "/api/fame/status";
+        const res = await fetch(url);
         const data = await res.json();
         if (!data.ok) {
             overallStatus.textContent = "Offline";
@@ -1173,6 +1226,11 @@ async function loadFameStatus(): Promise<void> {
         overallStatus.textContent = "Error";
         overallStatus.style.color = "var(--side1)";
         container.innerHTML = `<div class="fame-loading">Error fetching Fame status: ${escapeHtml(err.message)}</div>`;
+    } finally {
+        if (refreshBtn) {
+            refreshBtn.disabled = false;
+            refreshBtn.textContent = "🔄 Refresh Status";
+        }
     }
 }
 
@@ -1237,17 +1295,7 @@ function renderFameDashboard(data: any): void {
         </div>
     `;
 
-    // Wire "View Replay" buttons in cards
-    for (const btn of container.querySelectorAll<HTMLElement>(".btn-view-match")) {
-        btn.addEventListener("click", async () => {
-            const shortId = btn.dataset.shortId;
-            const gameId = btn.dataset.gameId;
-            const targetRef = shortId || gameId;
-            if (targetRef) {
-                navigate(`/replays/${encodeURIComponent(targetRef)}`);
-            }
-        });
-    }
+    wireFameCardButtons(container);
 }
 
 function getArenaThemeClass(name: string): string {

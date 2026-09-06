@@ -87,7 +87,7 @@ test("redirects / to /replays and serves index.html for SPA routes", async () =>
     const { serve } = await import("../src/serve.js");
     const http = await import("node:http");
 
-    const opts = resolveServeOptions(ROOT, { port: 5789 });
+    const opts = resolveServeOptions(ROOT, { port: 5789, disableFamePolling: true });
     const srv = serve(opts);
 
     const get = (path: string) =>
@@ -126,7 +126,7 @@ test("binds to explicit host when host option is specified", async () => {
     const { serve } = await import("../src/serve.js");
     const http = await import("node:http");
 
-    const opts = resolveServeOptions(ROOT, { port: 5790, host: "127.0.0.1" });
+    const opts = resolveServeOptions(ROOT, { port: 5790, host: "127.0.0.1", disableFamePolling: true });
     const srv = serve(opts);
 
     const get = (path: string) =>
@@ -143,7 +143,6 @@ test("binds to explicit host when host option is specified", async () => {
         srv.close();
     }
 });
-
 
 test("finds replays nested in per-run subdirectories", () => {
     const dir = mkdtempSync(join(tmpdir(), "arena-tools-nested-"));
@@ -170,5 +169,103 @@ test("finds replays nested in per-run subdirectories", () => {
         assert.equal(found[0].meta?.shortId, "abc");
     } finally {
         rmSync(dir, { recursive: true, force: true });
+    }
+});
+
+test("/fame serves SSR HTML with pre-rendered cards and injected __INITIAL_FAME_DATA__", async () => {
+    const { serve, setCachedFameDataForTest } = await import("../src/serve.js");
+    const http = await import("node:http");
+
+    const mockFameData = {
+        ok: true,
+        arenas: [
+            {
+                arenaName: "Pain and Gain (Basic)",
+                advanced: false,
+                unlocked: true,
+                canPlay: true,
+                isFinished: false,
+                gamesPlayed: 3,
+                wins: 2,
+                losses: 1,
+                draws: 0,
+                famePoints: 120,
+                rewardsLevel: 1,
+                rewardsTaken: false,
+                rewards: [{ name: "Coins", quantity: 50 }],
+                games: [
+                    { won: true, draw: false, opponent: "TestBot", ticks: 120, shortId: "abc", _id: "1" },
+                ],
+            },
+            {
+                arenaName: "Escort Run (Advanced)",
+                advanced: true,
+                unlocked: true,
+                canPlay: false,
+                isFinished: true,
+                gamesPlayed: 10,
+                wins: 7,
+                losses: 3,
+                draws: 0,
+                famePoints: 450,
+                rewardsLevel: 3,
+                rewardsTaken: true,
+                rewards: [],
+                games: [],
+            },
+        ],
+        nextResetUtc: new Date(Date.now() + 3600 * 1000 * 5).toISOString(),
+        nextResetMs: 3600 * 1000 * 5,
+        updatedAt: Date.now(),
+    };
+
+    setCachedFameDataForTest(mockFameData);
+
+    const opts = resolveServeOptions(ROOT, { port: 5791, disableFamePolling: true });
+    const srv = serve(opts);
+
+    const get = (path: string) =>
+        new Promise<{ status: number; body: string }>((res) => {
+            http.get(`http://localhost:5791${path}`, (r) => {
+                let data = "";
+                r.on("data", (chunk) => {
+                    data += chunk;
+                });
+                r.on("end", () => {
+                    res({ status: r.statusCode ?? 0, body: data });
+                });
+            });
+        });
+
+    try {
+        // 1. Verify /fame SSR HTML
+        const fameRes = await get("/fame");
+        assert.equal(fameRes.status, 200);
+        const html = fameRes.body;
+
+        // Active tab & visibility
+        assert.ok(html.includes('id="tab-btn-fame" class="tab-btn active"'), "Fame tab should be active");
+        assert.ok(html.includes('id="tab-btn-replays" class="tab-btn"'), "Replays tab should not be active");
+        assert.ok(html.includes('id="view-replays" class="app-layout" hidden'), "Replays view should be hidden");
+        assert.ok(html.includes('id="view-fame" class="fame-dashboard"'), "Fame view should be fame-dashboard");
+        assert.ok(!html.includes('id="view-fame" class="fame-dashboard" hidden'), "Fame view should not be hidden");
+
+        // SSR Pre-rendered content
+        assert.ok(html.includes("Pain and Gain (Basic)"), "Should render arena card in SSR");
+        assert.ok(html.includes("Escort Run (Advanced)"), "Should render advanced arena card in SSR");
+        assert.ok(html.includes('id="fame-total-points">570</div>'), "Total points should be pre-calculated");
+        assert.ok(html.includes('id="fame-unlocked-count">2 / 2</div>'), "Unlocked count should be pre-calculated");
+        assert.ok(html.includes('window.__INITIAL_FAME_DATA__ = {"ok":true'), "Script tag should inject initial data");
+
+        // 2. Verify /api/fame/status returns cached data
+        const apiRes = await get("/api/fame/status");
+        assert.equal(apiRes.status, 200);
+        const apiJson = JSON.parse(apiRes.body);
+        assert.equal(apiJson.ok, true);
+        assert.equal(apiJson.arenas.length, 2);
+        assert.equal(apiJson.arenas[0].arenaName, "Pain and Gain (Basic)");
+    } finally {
+        setCachedFameDataForTest(null);
+        srv.close();
     }
 });
