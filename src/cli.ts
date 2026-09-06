@@ -39,7 +39,8 @@ const USAGE = `
 Screeps: Arena Tools
 
   screeps-arena-tools fame [arena] [--stop-on-defeat] [--continuous] [--status] [--init-config]
-      Automate daily Fame matches, collect chest rewards, and finalize sessions.
+      [EXPERIMENTAL] Automate daily Fame matches, collect chest rewards, and finalize sessions.
+      Use strictly at your own risk.
       - Default: runs all 10 matches per unlocked arena.
       - Add --stop-on-defeat to stop daily series upon first defeat.
       - Add --continuous (or --watch) to wait until next UTC 00:00:00 and loop daily.
@@ -535,6 +536,7 @@ async function cmdFame(positional: string[], flags: Record<string, string | bool
         return;
     }
 
+    console.log("⚠️  [EXPERIMENTAL] Fame automation is an experimental feature. Use strictly at your own risk.");
     await runFameAutomation({
         arena,
         stopOnDefeat,

@@ -12,9 +12,9 @@ A zero-dependency, buildless toolchain to **fetch, normalize, and view** [Screep
 - **plugins** — Overlay bot-specific internal state **without forking the codebase**
 
 ```bash
-npx screeps-arena-tools fame                                  # Auto-run daily Fame matches for unlocked arenas
+npx screeps-arena-tools fame                                  # [Experimental] Auto-run daily Fame matches for unlocked arenas
 npx screeps-arena-tools fame --status                         # View today's Fame progress & reset countdown
-npx screeps-arena-tools fame --continuous                     # Keep running daily, waiting for UTC 00:00:00 reset
+npx screeps-arena-tools fame --continuous                     # [Experimental] Keep running daily, waiting for UTC 00:00:00 reset
 npx screeps-arena-tools collect "Pain and Gain" --count 10  # Auto-run 10 matches & collect logs
 npx screeps-arena-tools sync "Pain and Gain"                # Auto-fetch all recent replays
 npx screeps-arena-tools sync --watch                       # Monitor & auto-download in background
@@ -36,7 +36,13 @@ It does not forge credentials; instead, **it delegates fetching to your already-
 
 ## Usage
 
-### Daily Fame Match Automation
+### Daily Fame Match Automation (Experimental ⚠️)
+
+> [!WARNING]
+> **Experimental Feature — Use Strictly at Your Own Risk**
+> Fame automation controls the Electron renderer to automatically queue live daily matches, poll simulations, and claim rewards.
+> Due to Screeps: Arena API timing, simulation variability, and potential game updates, unforeseen interruptions or errors may occur.
+> **Only use this if you are willing to accept the risk of interrupted runs.** If you want 100% guarantee of uninterrupted daily progression, please play your Fame matches manually in the official game client.
 
 Automate your daily Fame series (up to 10 matches per unlocked arena), automatically claim chest rewards upon finishing, and leave the session until tomorrow:
 
