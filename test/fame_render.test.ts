@@ -3,6 +3,7 @@ import { test } from "node:test";
 import {
     escapeHtml,
     formatCountdown,
+    formatLastUpdated,
     getArenaOrderIndex,
     getArenaThemeClass,
     getFameSummaryStats,
@@ -15,6 +16,13 @@ test("escapeHtml escapes special HTML characters", () => {
     assert.equal(escapeHtml('<script>alert("xss & \'test\'")</script>'), "&lt;script&gt;alert(&quot;xss &amp; &#039;test&#039;&quot;)&lt;/script&gt;");
     assert.equal(escapeHtml(null), "");
     assert.equal(escapeHtml(undefined), "");
+});
+
+test("formatLastUpdated formats timestamps into YYYY-MM-DD HH:mm:ss", () => {
+    assert.equal(formatLastUpdated(null), "-");
+    assert.equal(formatLastUpdated("invalid"), "-");
+    const d = new Date(2026, 8, 6, 21, 45, 30); // 2026-09-06 21:45:30
+    assert.equal(formatLastUpdated(d.getTime()), "2026-09-06 21:45:30");
 });
 
 test("getArenaThemeClass identifies arena themes", () => {

@@ -672,6 +672,16 @@ button:disabled { opacity: 0.4; cursor: default; }
     font-size: 12px;
     color: var(--fg-dim);
 }
+.fame-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+.fame-last-updated-text {
+    font-size: 12px;
+    color: var(--fg-dim);
+    font-family: ui-monospace, SFMono-Regular, monospace;
+}
 
 .fame-summary-bar {
     display: grid;

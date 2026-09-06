@@ -228,6 +228,20 @@ export function formatCountdown(nextResetUtc: string | Date | null | undefined):
     return `${h}:${m}:${s}`;
 }
 
+export function formatLastUpdated(timestamp: number | string | Date | null | undefined): string {
+    if (!timestamp) return "-";
+    const d = typeof timestamp === "number" || typeof timestamp === "string" ? new Date(timestamp) : timestamp;
+    if (isNaN(d.getTime())) return "-";
+    const pad = (n: number) => n.toString().padStart(2, "0");
+    const year = d.getFullYear();
+    const month = pad(d.getMonth() + 1);
+    const day = pad(d.getDate());
+    const hours = pad(d.getHours());
+    const minutes = pad(d.getMinutes());
+    const seconds = pad(d.getSeconds());
+    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+}
+
 /**
  * Transforms viewer index.html for server-side rendering (SSR) of the /fame route.
  * Injects initial fame data and pre-renders cards and status badges into HTML.
@@ -244,6 +258,19 @@ export function renderFamePageHtml(baseHtml: string, fameData: any | null): stri
         html = html.replace('id="view-replays" class="app-layout"', 'id="view-replays" class="app-layout" hidden');
     }
     html = html.replace(/(<div id="view-fame"[^>]*?)\s+hidden\b/g, "$1");
+
+    // Inject last updated timestamp if available
+    if (fameData?.updatedAt) {
+        const lastUpdatedStr = formatLastUpdated(fameData.updatedAt);
+        html = html.replace(
+            /(<div [^>]*id="fame-last-updated"[^>]*>)[^<]*(<\/div>)/,
+            `$1${escapeHtml(lastUpdatedStr)}$2`,
+        );
+        html = html.replace(
+            /(<span [^>]*id="fame-last-updated-head"[^>]*>)[^<]*(<\/span>)/,
+            `$1Updated: ${escapeHtml(lastUpdatedStr)}$2`,
+        );
+    }
 
     // 3. Inject pre-rendered dashboard if data is available
     if (fameData && fameData.ok && Array.isArray(fameData.arenas)) {

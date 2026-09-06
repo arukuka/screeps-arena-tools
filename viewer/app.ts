@@ -1169,6 +1169,20 @@ function wireFameCardButtons(container: HTMLElement): void {
     }
 }
 
+function formatLastUpdated(timestamp: number | string | Date | null | undefined): string {
+    if (!timestamp) return "-";
+    const d = typeof timestamp === "number" || typeof timestamp === "string" ? new Date(timestamp) : timestamp;
+    if (isNaN(d.getTime())) return "-";
+    const pad = (n: number) => n.toString().padStart(2, "0");
+    const year = d.getFullYear();
+    const month = pad(d.getMonth() + 1);
+    const day = pad(d.getDate());
+    const hours = pad(d.getHours());
+    const minutes = pad(d.getMinutes());
+    const seconds = pad(d.getSeconds());
+    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+}
+
 async function fetchFameStatusSilently(): Promise<void> {
     try {
         const res = await fetch("/api/fame/status");
@@ -1193,6 +1207,13 @@ async function loadFameStatus(force = false): Promise<void> {
         (window as any).__INITIAL_FAME_DATA__ = null;
         if (initialData.ok) {
             fameNextResetUtc = initialData.nextResetUtc;
+            if (initialData.updatedAt) {
+                const lastUpdatedStr = formatLastUpdated(initialData.updatedAt);
+                const elHead = $("fame-last-updated-head");
+                if (elHead) elHead.textContent = `Updated: ${lastUpdatedStr}`;
+                const elBar = $("fame-last-updated");
+                if (elBar) elBar.textContent = lastUpdatedStr;
+            }
             wireFameCardButtons(container);
             fetchFameStatusSilently();
             return;
@@ -1241,6 +1262,14 @@ function renderFameDashboard(data: any): void {
 
     $("fame-unlocked-count").textContent = `${unlocked.length} / ${arenas.length}`;
     $("fame-total-points").textContent = String(totalPoints);
+
+    if (data.updatedAt) {
+        const lastUpdatedStr = formatLastUpdated(data.updatedAt);
+        const elHead = $("fame-last-updated-head");
+        if (elHead) elHead.textContent = `Updated: ${lastUpdatedStr}`;
+        const elBar = $("fame-last-updated");
+        if (elBar) elBar.textContent = lastUpdatedStr;
+    }
 
     const anyCanPlay = unlocked.some((a) => a.canPlay);
     const anyInProg = unlocked.some((a) => a.gamesPlayed > 0 && !a.isFinished);

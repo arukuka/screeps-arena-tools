@@ -255,6 +255,8 @@ test("/fame serves SSR HTML with pre-rendered cards and injected __INITIAL_FAME_
         assert.ok(html.includes("Escort Run (Advanced)"), "Should render advanced arena card in SSR");
         assert.ok(html.includes('id="fame-total-points">570</div>'), "Total points should be pre-calculated");
         assert.ok(html.includes('id="fame-unlocked-count">2 / 2</div>'), "Unlocked count should be pre-calculated");
+        assert.ok(html.includes('id="fame-last-updated"'), "Should contain fame-last-updated element");
+        assert.ok(html.includes('id="fame-last-updated-head">Updated:'), "Header should contain last updated timestamp");
         assert.ok(html.includes('window.__INITIAL_FAME_DATA__ = {"ok":true'), "Script tag should inject initial data");
 
         // 2. Verify /api/fame/status returns cached data
