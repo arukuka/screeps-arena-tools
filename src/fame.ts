@@ -271,7 +271,12 @@ export async function ensureFamePage(session: CdpSession, arenaId: string): Prom
  * Fetch all arenas in the current season and their Fame & unlock statuses.
  */
 export async function getAllArenasFameStatus(session: CdpSession): Promise<ArenaFameStatus[]> {
-    const seasonData = await session.evaluateInRenderer(fetchExpr(`${API}/season/current`));
+    let seasonData: any = null;
+    for (let i = 0; i < 3; i++) {
+        seasonData = await session.evaluateInRenderer(fetchExpr(`${API}/season/current`));
+        if (seasonData && !seasonData.__error && seasonData.season?._id) break;
+        await sleep(500);
+    }
     if (!seasonData || seasonData.__error || !seasonData.season?._id) {
         throw new Error("Cannot fetch current season information from Screeps: Arena API");
     }
@@ -570,8 +575,6 @@ export async function runFameForArena(
         return { completed: true, matchesPlayed: 0, stoppedOnDefeat: false, finalStatus: currentStatus };
     }
 
-    let errorOccurred = false;
-
     // Play loop
     while (currentStatus.gamesPlayed < FAME_MAX_GAMES) {
         const matchNum = currentStatus.gamesPlayed + 1;
@@ -619,28 +622,26 @@ export async function runFameForArena(
             // Brief rest between matches
             await sleep(2000);
         } catch (err: any) {
-            log(`  Error running match: ${err.message}`);
-            errorOccurred = true;
-            break;
+            log(`\n  [CRITICAL ERROR] Failed during match ${matchNum}: ${err.message}`);
+            log(`  Aborting program immediately. The session was NOT finalized and remains open.`);
+            log(`  You can safely resume Fame automation by re-running the command after resolving the issue.\n`);
+            throw err;
         }
     }
 
-    // Refresh final status
-    const meData = await session.evaluateInRenderer(fetchExpr(`${API}/auth/me`));
-    currentStatus = await getSingleArenaFameStatus(session, arena, meData?._id ?? null);
-
-    if (errorOccurred) {
-        log(`\n  Notice: Fame runner interrupted by error. Session is kept OPEN (not finalized) so you can safely retry.`);
+    // Finalize session (Leave and Finish) and claim rewards ONLY on clean completion
+    const isCleanFinish = currentStatus.gamesPlayed >= FAME_MAX_GAMES || stoppedOnDefeat;
+    if (!isCleanFinish) {
+        log(`\n  Fame series paused (${currentStatus.gamesPlayed}/${FAME_MAX_GAMES} played). Session kept open for retry.`);
         return {
             completed: false,
             matchesPlayed,
-            stoppedOnDefeat: false,
+            stoppedOnDefeat,
             finalStatus: currentStatus,
         };
     }
 
-    // Series finished cleanly: claim rewards and finish session
-    log(`\n  Series finished. Total matches played today: ${currentStatus.gamesPlayed}/${FAME_MAX_GAMES}`);
+    log(`\n  Series finished cleanly. Total matches played today: ${currentStatus.gamesPlayed}/${FAME_MAX_GAMES}`);
 
     // If rewards exist and not claimed yet, claim them
     if (currentStatus.rewardsLevel > 0 && !currentStatus.rewardsTaken) {
@@ -653,9 +654,8 @@ export async function runFameForArena(
         }
     }
 
-    // Finalize session (Leave and Finish) only when all matches played or stopped on defeat
-    const shouldFinalize = currentStatus.gamesPlayed >= FAME_MAX_GAMES || stoppedOnDefeat;
-    if (shouldFinalize && !currentStatus.isFinished) {
+    // Finalize session (Leave and Finish)
+    if (!currentStatus.isFinished) {
         log(`  Finalizing Fame session (Leave and Finish)...`);
         try {
             await finishFameSession(session, arena.arenaId);
